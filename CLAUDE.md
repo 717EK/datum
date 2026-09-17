@@ -80,10 +80,13 @@ active worker and one `step-viewer-<version>` cache.
   once a doc is open (1=light) — set it in open sysVars and via AcDbSysVarManager
   on switches. MODELBKCOLOR as an open-time sysvar breaks layout resolution in
   cad-simple-viewer 1.7 → only PAPERBKCOLOR at open; model bg via
-   after open (also re-inverts ACI 7 lines).
+  `curView.backgroundColor` after open (also re-inverts ACI 7 lines).
 - App default theme is **light** (changed 2026-09-17); "Follow system" is opt-in.
 - The black "INP Issue" card Vivek saw was the **Vercel Toolbar** (only shown to
-  logged-in team members); disabled via .
+  logged-in team members); disabled via the project API
+  (`enableProductionFeedback: false`). Its INP measurement itself was real
+  (2D canvas handlers on the main thread) → MTEXT now runs in the worker on
+  desktop (`useMainThreadDraw: isMobileUA`).
 - Source files are CRLF: shell heredoc/sed patches break; use the Edit tool.
 - **Vercel blocks deploys whose commit author isn't a GitHub account it knows**
   (`COMMIT_AUTHOR_REQUIRED`, state BLOCKED, no build logs) once the project is
