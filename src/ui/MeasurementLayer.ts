@@ -11,6 +11,8 @@ interface Live {
   a: THREE.Vector3;
   b: THREE.Vector3;
   text: string;
+  /** The caption span, re-labelled when the display unit changes. */
+  textEl?: HTMLElement;
 }
 
 /** Row data for the measurements section of the annotations list panel. */
@@ -142,13 +144,15 @@ export class MeasurementLayer {
 
     const mid = a.clone().add(b).multiplyScalar(0.5);
     const distText = formatMm(a.distanceTo(b));
-    const label = this.labelLayer.add(
+    const live: Live = { data: d, graphic, label: null as unknown as LabelHandle, a, b, text: distText };
+    // Read `live.text` lazily so a display-unit change re-labels the caption.
+    live.label = this.labelLayer.add(
       el,
       () => this.controller.localToWorld(mid),
       null,
-      () => distText,
+      () => live.text,
     );
-    const live: Live = { data: d, graphic, label, a, b, text: distText };
+    live.textEl = text;
 
     el.addEventListener("pointerdown", (e) => e.stopPropagation());
     del.addEventListener("click", (e) => {
@@ -159,6 +163,15 @@ export class MeasurementLayer {
     this.items.push(live);
     this.applyVisual(live);
     return live;
+  }
+
+  /** Re-format every pinned label after the display unit changed. */
+  refreshUnits(): void {
+    for (const live of this.items) {
+      live.text = formatMm(live.a.distanceTo(live.b));
+      if (live.textEl) live.textEl.textContent = live.text;
+    }
+    this.onChange?.();
   }
 
   private remove(live: Live): void {

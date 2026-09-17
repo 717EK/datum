@@ -5,6 +5,7 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 import { fitCameraToObject } from "./fitCamera";
 import { EDGES_TAG, MESH_TAG } from "./StepToThree";
 import { SectionCaps } from "./SectionCaps";
+import { formatLength, formatLengthValue, unitSymbol } from "./units";
 
 const TRANSPARENT_OPACITY = 0.35;
 const MEASURE_COLOR = 0xff5500;
@@ -1736,16 +1737,16 @@ export class ViewerController {
     const dy = Math.abs(b.y - a.y);
     const dz = Math.abs(b.z - a.z);
     this.onMeasureUpdate?.(
-      `≈ ${formatMm(dist)} (approx.)  ·  Δ ${num(dx)} / ${num(dy)} / ${num(dz)} mm (X/Y/Z)`,
+      `≈ ${formatMm(dist)} (approx.)  ·  Δ ${num(dx)} / ${num(dy)} / ${num(dz)} ${unitSymbol()} (X/Y/Z)`,
     );
     const c1 = new THREE.Vector3(b.x, a.y, a.z);
     const c2 = new THREE.Vector3(b.x, b.y, a.z);
     const labels: MeasureLabel[] = [
       { pos: mid(a, b), text: formatMm(dist), color: MEASURE_COLOR },
     ];
-    if (dx > 1e-6) labels.push({ pos: mid(a, c1), text: `${num(dx)} mm`, color: AXIS_COLORS.x });
-    if (dy > 1e-6) labels.push({ pos: mid(c1, c2), text: `${num(dy)} mm`, color: AXIS_COLORS.y });
-    if (dz > 1e-6) labels.push({ pos: mid(c2, b), text: `${num(dz)} mm`, color: AXIS_COLORS.z });
+    if (dx > 1e-6) labels.push({ pos: mid(a, c1), text: `${num(dx)} ${unitSymbol()}`.trimEnd(), color: AXIS_COLORS.x });
+    if (dy > 1e-6) labels.push({ pos: mid(c1, c2), text: `${num(dy)} ${unitSymbol()}`.trimEnd(), color: AXIS_COLORS.y });
+    if (dz > 1e-6) labels.push({ pos: mid(c2, b), text: `${num(dz)} ${unitSymbol()}`.trimEnd(), color: AXIS_COLORS.z });
     this.onMeasureLabels?.(labels);
     this.onMeasureCanKeep?.(true); // only distance can be pinned persistently
   }
@@ -2440,15 +2441,14 @@ function fitCircle(
   return { center, radius: r, normal };
 }
 
-/** Format a millimeter distance, switching to metres for large values. */
+/** Format a millimetre distance in the current display unit (see units.ts). */
 export function formatMm(mm: number): string {
-  if (mm >= 1000) return `${(mm / 1000).toFixed(3)} m`;
-  return `${mm.toFixed(2)} mm`;
+  return formatLength(mm);
 }
 
-/** Compact unit-less millimetre number for the per-axis components. */
+/** Compact unit-less number for the per-axis components, in the display unit. */
 function num(mm: number): string {
-  return mm >= 100 ? mm.toFixed(0) : mm.toFixed(1);
+  return formatLengthValue(mm);
 }
 
 function mid(a: THREE.Vector3, b: THREE.Vector3): THREE.Vector3 {

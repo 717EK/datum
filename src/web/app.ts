@@ -25,6 +25,8 @@ import { METADATA_MAX_BYTES } from "../viewer/StepMeta";
 import { StepViewerSettings, DEFAULT_SETTINGS } from "../settings";
 import { initPwa, InstallMode, PwaHandle } from "./pwa";
 import { RecentsStore, RecentEntry, entryId } from "./recents";
+import { LENGTH_UNITS, LengthUnit, setLengthUnit } from "../viewer/units";
+import * as THREE from "three";
 
 declare const __APP_VERSION__: string;
 declare const __BUILD_HASH__: string;
@@ -49,6 +51,31 @@ declare global {
 }
 const SETTINGS_KEY = "step-viewer:settings";
 const THEME_KEY = "step-viewer:theme";
+const UNITS_KEY = "step-viewer:units";
+const MESH_UNIT_KEY = "step-viewer:mesh-unit";
+
+/** Display unit; "drawing" = follow the DWG/DXF's own units (3D shows mm). */
+type DisplayUnit = LengthUnit | "drawing";
+const DISPLAY_UNITS: { id: DisplayUnit; label: string; short: string }[] = [
+  { id: "drawing", label: "Drawing units (DWG/DXF as saved; 3D in mm)", short: "auto" },
+  ...LENGTH_UNITS.map((u) => ({ id: u.id as DisplayUnit, label: u.label, short: u.id === "ft-in" ? "ft-in" : u.id })),
+];
+/** What unit an STL/OBJ (which carry none) was modelled in. */
+type MeshUnit = "mm" | "cm" | "m" | "in";
+const MESH_UNITS: { id: MeshUnit; label: string; mm: number }[] = [
+  { id: "mm", label: "Millimetres", mm: 1 },
+  { id: "cm", label: "Centimetres", mm: 10 },
+  { id: "m", label: "Metres", mm: 1000 },
+  { id: "in", label: "Inches", mm: 25.4 },
+];
+function loadDisplayUnit(): DisplayUnit {
+  const v = localStorage.getItem(UNITS_KEY);
+  return DISPLAY_UNITS.some((u) => u.id === v) ? (v as DisplayUnit) : "drawing";
+}
+function loadMeshUnit(): MeshUnit {
+  const v = localStorage.getItem(MESH_UNIT_KEY);
+  return MESH_UNITS.some((u) => u.id === v) ? (v as MeshUnit) : "mm";
+}
 
 type Theme = "auto" | "light" | "dark";
 
@@ -147,9 +174,13 @@ class WebApp {
   private installReason = "";
   private pendingUpdate: (() => void) | null = null;
   private settingsPop: HTMLElement | null = null;
+  private displayUnit: DisplayUnit = loadDisplayUnit();
+  private meshUnit: MeshUnit = loadMeshUnit();
+  private unitSel!: HTMLSelectElement;
 
   constructor(root: HTMLElement) {
     this.root = root;
+    this.applyUnits();
     document.body.classList.toggle("is-mobile", Platform.isMobile);
     document.body.classList.toggle("is-phone", Platform.isPhone);
     applyTheme(currentTheme());
@@ -193,6 +224,14 @@ class WebApp {
     openBtn.createSpan({ cls: "sv-btn-label", text: "Open" });
     setTooltip(openBtn, "Open a STEP / STP / STL / OBJ / FCStd file");
     openBtn.addEventListener("click", () => void this.pickFile());
+
+    // Display-unit switch (mirrored in Settings); shown while a file is open.
+    this.unitSel = actions.createEl("select", { cls: "sv-units" });
+    for (const u of DISPLAY_UNITS) this.unitSel.createEl("option", { text: u.short, attr: { value: u.id, title: u.label } });
+    this.unitSel.value = this.displayUnit;
+    setTooltip(this.unitSel, "Display units for measurements and sizes");
+    this.unitSel.hide();
+    this.unitSel.addEventListener("change", () => this.setDisplayUnit(this.unitSel.value as DisplayUnit));
 
     this.updateBtn = actions.createEl("button", { cls: "sv-btn sv-btn-update" });
     setIcon(this.updateBtn.createSpan({ cls: "sv-btn-icon" }), "refresh-cw");
@@ -338,7 +377,40 @@ class WebApp {
 
   private setTitle(name: string | null): void {
     this.titleEl.setText(name ?? "");
+    this.unitSel?.toggle(!!name);
     document.title = name ? `${name} – ${APP_NAME}` : `${APP_NAME} · ${COMPANY}`;
+  }
+
+  // --- Units --------------------------------------------------------------
+
+  /** Push the chosen display unit into both viewers. */
+  private applyUnits(): void {
+    const u = this.displayUnit;
+    setLengthUnit(u === "drawing" ? "mm" : u);
+    this.viewer?.refreshUnits();
+    window.DatumCad2d?.setUnits(u);
+  }
+
+  private setDisplayUnit(u: DisplayUnit): void {
+    this.displayUnit = u;
+    localStorage.setItem(UNITS_KEY, u);
+    if (this.unitSel) this.unitSel.value = u;
+    this.applyUnits();
+  }
+
+  /** Bake a source-unit scale into an STL/OBJ model so it is in mm like everything else. */
+  private scaleMeshModel(group: THREE.Object3D): void {
+    const k = MESH_UNITS.find((m) => m.id === this.meshUnit)?.mm ?? 1;
+    if (k === 1) return;
+    const m = new THREE.Matrix4().makeScale(k, k, k);
+    group.traverse((o) => {
+      const g = (o as THREE.Mesh).geometry;
+      if (g) {
+        g.applyMatrix4(m);
+        g.computeBoundingBox();
+        g.computeBoundingSphere();
+      }
+    });
   }
 
   private applyThemeEverywhere(theme: Theme): void {
@@ -399,6 +471,7 @@ class WebApp {
       if (token !== this.loadToken) return;
       const dark = document.body.classList.contains("theme-dark");
       await api.init(this.host2dContainer, this.host2dUi, dark ? "dark" : "light");
+      api.setUnits(this.displayUnit);
       if (token !== this.loadToken) return;
       const bytes = await file.arrayBuffer();
       if (token !== this.loadToken) return;
@@ -602,6 +675,7 @@ class WebApp {
           ext === "obj"
             ? objToStepModel(new TextDecoder().decode(buffer), baseName)
             : stlToStepModel(buffer, baseName);
+        this.scaleMeshModel(model.group);
         loadingEl.remove();
         this.viewer = mountModel(host, model, mountOpts);
         this.afterMount(file, token);
@@ -876,6 +950,21 @@ class WebApp {
     themeSel.addEventListener("change", () => {
       localStorage.setItem(THEME_KEY, themeSel.value);
       this.applyThemeEverywhere(themeSel.value as Theme);
+    });
+
+    const unitCtl = row("Display units", "Measurements, part sizes, volumes. 2D drawings also follow this for measure tools.");
+    const unitSel = unitCtl.createEl("select");
+    for (const u of DISPLAY_UNITS) unitSel.createEl("option", { text: u.label, attr: { value: u.id } });
+    unitSel.value = this.displayUnit;
+    unitSel.addEventListener("change", () => this.setDisplayUnit(unitSel.value as DisplayUnit));
+
+    const meshCtl = row("STL / OBJ files are in", "These formats carry no unit. Applies the next time one is opened.");
+    const meshSel = meshCtl.createEl("select");
+    for (const u of MESH_UNITS) meshSel.createEl("option", { text: u.label, attr: { value: u.id } });
+    meshSel.value = this.meshUnit;
+    meshSel.addEventListener("change", () => {
+      this.meshUnit = meshSel.value as MeshUnit;
+      localStorage.setItem(MESH_UNIT_KEY, this.meshUnit);
     });
 
     const profCtl = row("Mesh quality", "Applies the next time a model is opened.");

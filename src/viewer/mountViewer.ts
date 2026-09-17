@@ -36,6 +36,8 @@ export interface MountOptions {
 
 export interface ViewerHandle {
   controller: ViewerController;
+  /** Re-label readouts after the display unit changed (see viewer/units.ts). */
+  refreshUnits(): void;
   dispose(): void;
 }
 
@@ -386,6 +388,10 @@ export function mountModel(
 
   return {
     controller,
+    refreshUnits: () => {
+      measurements.refreshUnits();
+      info.update(selectedInfo);
+    },
     dispose: () => {
       controller.dispose();
       host.empty();

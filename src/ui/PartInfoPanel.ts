@@ -1,4 +1,5 @@
 import { PartInfo } from "../viewer/ViewerController";
+import { formatArea, formatLengthValue, formatVolume, unitSymbol } from "../viewer/units";
 
 /**
  * Small overlay (bottom-right) showing details of the part under the cursor:
@@ -50,11 +51,11 @@ export class PartInfoPanel {
     this.matEl.toggle(!!part.material || hasColor);
 
     this.dimsEl.setText(
-      `${fmt(part.size.x)} × ${fmt(part.size.y)} × ${fmt(part.size.z)} mm`,
+      `${fmt(part.size.x)} × ${fmt(part.size.y)} × ${fmt(part.size.z)} ${unitSymbol()}`.trimEnd(),
     );
 
     this.centerEl.setText(
-      `Centre  ${fmt(part.center.x)}, ${fmt(part.center.y)}, ${fmt(part.center.z)} mm`,
+      `Centre  ${fmt(part.center.x)}, ${fmt(part.center.y)}, ${fmt(part.center.z)} ${unitSymbol()}`.trimEnd(),
     );
 
     this.volEl.setText(`${volume(part.volume)}  ·  ${area(part.area)}`);
@@ -66,17 +67,15 @@ export class PartInfoPanel {
 }
 
 function fmt(v: number): string {
-  return v >= 100 ? v.toFixed(0) : v.toFixed(1);
+  return formatLengthValue(v);
 }
 
-/** Volume in mm³, switching to cm³ for larger parts. */
+/** Volume from mm³ in the current display unit. */
 function volume(mm3: number): string {
-  if (mm3 >= 1000) return `${(mm3 / 1000).toFixed(2)} cm³`;
-  return `${mm3.toFixed(1)} mm³`;
+  return formatVolume(mm3);
 }
 
-/** Surface area in mm², switching to cm² for larger parts. */
+/** Surface area from mm² in the current display unit. */
 function area(mm2: number): string {
-  if (mm2 >= 100) return `${(mm2 / 100).toFixed(2)} cm²`;
-  return `${mm2.toFixed(1)} mm²`;
+  return formatArea(mm2);
 }

@@ -22,10 +22,16 @@ import {
   AcEdOpenMode,
   LIBREDWG_PARSER_WORKER_FILE,
   MTEXT_RENDERER_WORKER_FILE,
+  formatMeasurementLength,
+  refreshMeasurementValueLabels,
+  resetMeasurementUnitOverride,
+  setMeasurementUnitOverride,
 } from "@mlightcad/cad-simple-viewer";
 import { AcDbDatabaseConverterManager, AcDbFileType, AcDbSystemVariables, AcDbSysVarManager } from "@mlightcad/data-model";
 import { AcDbLibreDwgConverter } from "@mlightcad/libredwg-converter";
 import { acuiRegisterSimpleUiPlugin } from "@mlightcad/cad-simple-ui-plugin/register";
+
+export type Cad2dUnit = "drawing" | "mm" | "cm" | "m" | "in" | "ft" | "ft-in";
 
 export interface Cad2dOpenResult {
   ok: boolean;
@@ -40,6 +46,10 @@ export interface Cad2dApi {
   /** Close the current drawing (frees geometry) but keep the manager. */
   close(): Promise<void>;
   setTheme(theme: "light" | "dark"): void;
+  /** Display unit for measurements; "drawing" = whatever the file's own units are. */
+  setUnits(unit: Cad2dUnit): void;
+  /** Format a length in drawing units with the effective measurement units (what the measure labels show). */
+  formatLength(value: number): string | null;
   /** PNG data URL of the current view, or null. */
   snapshot(): string | null;
   /** Whether workers (mtext / dwg) are reachable — a deploy sanity check. */
@@ -70,6 +80,35 @@ function applyViewBackground(): void {
   const m = AcApDocManager.tryGetInstance();
   try {
     if (m?.curView) m.curView.backgroundColor = bgRgb();
+  } catch {
+    /* no document open */
+  }
+}
+let currentUnit: Cad2dUnit = "drawing";
+
+/**
+ * Map the app's unit choice onto AutoCAD-style codes the library understands:
+ * INSUNITS (1 in, 2 ft, 4 mm, 5 cm, 6 m) for the length unit, LUNITS for the
+ * display format (2 decimal, 4 architectural) and LUPREC for precision.
+ */
+function applyUnits(): void {
+  const m = AcApDocManager.tryGetInstance();
+  if (currentUnit === "drawing") {
+    resetMeasurementUnitOverride();
+  } else {
+    const table: Record<Exclude<Cad2dUnit, "drawing">, { lengthUnit: number; lunits: number; luprec: number }> = {
+      mm: { lengthUnit: 4, lunits: 2, luprec: 1 },
+      cm: { lengthUnit: 5, lunits: 2, luprec: 2 },
+      m: { lengthUnit: 6, lunits: 2, luprec: 3 },
+      in: { lengthUnit: 1, lunits: 2, luprec: 3 },
+      ft: { lengthUnit: 2, lunits: 2, luprec: 3 },
+      "ft-in": { lengthUnit: 1, lunits: 4, luprec: 4 },
+    };
+    setMeasurementUnitOverride(table[currentUnit]);
+  }
+  try {
+    const db = m?.curDocument?.database;
+    if (m?.curView && db) refreshMeasurementValueLabels(m.curView, db);
   } catch {
     /* no document open */
   }
@@ -176,7 +215,11 @@ const api: Cad2dApi = {
         progressiveRendering: false,
         sysVars: bgSysVars(),
       });
-      if (ok) applyViewBackground();
+      if (ok) {
+        applyViewBackground();
+        // Opening a document clears the library's unit override — re-apply ours.
+        applyUnits();
+      }
       return ok ? { ok: true } : { ok: false, error: "The drawing could not be read." };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -208,6 +251,21 @@ const api: Cad2dApi = {
     }
     // Re-tint the open drawing too (this also re-inverts ACI 7 entities).
     applyViewBackground();
+  },
+
+  setUnits(unit) {
+    currentUnit = unit;
+    applyUnits();
+  },
+
+  formatLength(value) {
+    const db = AcApDocManager.tryGetInstance()?.curDocument?.database;
+    if (!db) return null;
+    try {
+      return formatMeasurementLength(db, value);
+    } catch {
+      return null;
+    }
   },
 
   snapshot() {

@@ -253,6 +253,14 @@ button.mod-cta:hover { background: var(--interactive-accent-hover); }
 .sv-btn-sm { padding: 4px 10px; font-size: var(--font-ui-smaller); }
 .sv-btn-icon-only { padding: 6px; }
 .sv-btn-update { border-color: var(--interactive-accent); color: var(--text-accent); }
+.sv-units {
+  height: 32px;
+  padding: 4px 8px;
+  border-radius: var(--radius-m);
+  font-size: var(--font-ui-small);
+  font-weight: 500;
+  background: var(--background-primary);
+}
 .sv-btn-update.is-checking svg { animation: sv-spin 1s linear infinite; }
 
 .sv-main { position: relative; flex: 1 1 auto; min-height: 0; }
@@ -464,6 +472,7 @@ body.theme-light .sv-company { opacity: 0.7; }
   .sv-btn .sv-btn-label { display: none; }
   .sv-btn { padding: 8px; }
   .sv-btn-primary .sv-btn-label { display: none; }
+  .sv-units { display: none !important; } /* still available in Settings */
 }
 
 /* ---------- 2D (DWG / DXF) viewer host ---------- */

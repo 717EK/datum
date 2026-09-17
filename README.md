@@ -57,6 +57,14 @@ uploaded.
   *Recently opened* list with thumbnails; two columns on wide screens, one
   centred column on phones. Recents reopen with one tap (via File System
   Access handles on Chromium, or the stored bytes elsewhere, e.g. iOS).
+- **Units** — a unit switch in the header (and Settings): millimetres,
+  centimetres, metres, decimal inches, decimal feet, or feet-and-inches
+  (architectural, to 1/16"). It re-labels 3D measurements, part sizes, volumes
+  and areas live, and drives the 2D measure tools (which otherwise follow the
+  drawing's own units). STL/OBJ carry no unit, so Settings has a "STL / OBJ
+  files are in" choice (mm / cm / m / inches) applied when one is opened.
+  Note: in 2D, feet-and-inches formatting is only produced for drawings that
+  are natively in inches — converted metric drawings show decimal inches.
 - **Touch & stylus** — orbit / two-finger pan / pinch-zoom; **long-press** a
   part for its context menu, **double-tap** to frame it; while an Apple Pencil
   or S Pen is in use, stray finger touches are ignored (palm rejection).
