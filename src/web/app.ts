@@ -57,7 +57,7 @@ const MESH_UNIT_KEY = "step-viewer:mesh-unit";
 /** Display unit; "drawing" = follow the DWG/DXF's own units (3D shows mm). */
 type DisplayUnit = LengthUnit | "drawing";
 const DISPLAY_UNITS: { id: DisplayUnit; label: string; short: string }[] = [
-  { id: "drawing", label: "Drawing units (DWG/DXF as saved; 3D in mm)", short: "auto" },
+  { id: "drawing", label: "Drawing units (as saved)", short: "auto" },
   ...LENGTH_UNITS.map((u) => ({ id: u.id as DisplayUnit, label: u.label, short: u.id === "ft-in" ? "ft-in" : u.id })),
 ];
 /** What unit an STL/OBJ (which carry none) was modelled in. */
@@ -952,13 +952,13 @@ class WebApp {
       this.applyThemeEverywhere(themeSel.value as Theme);
     });
 
-    const unitCtl = row("Display units", "Measurements, part sizes, volumes. 2D drawings also follow this for measure tools.");
+    const unitCtl = row("Display units", "Measurements, sizes, volumes — 3D and 2D. “Drawing units” keeps a DWG/DXF as saved (3D in mm).");
     const unitSel = unitCtl.createEl("select");
     for (const u of DISPLAY_UNITS) unitSel.createEl("option", { text: u.label, attr: { value: u.id } });
     unitSel.value = this.displayUnit;
     unitSel.addEventListener("change", () => this.setDisplayUnit(unitSel.value as DisplayUnit));
 
-    const meshCtl = row("STL / OBJ files are in", "These formats carry no unit. Applies the next time one is opened.");
+    const meshCtl = row("STL / OBJ files are in", "They carry no unit. Applies when the next one is opened.");
     const meshSel = meshCtl.createEl("select");
     for (const u of MESH_UNITS) meshSel.createEl("option", { text: u.label, attr: { value: u.id } });
     meshSel.value = this.meshUnit;

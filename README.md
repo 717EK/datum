@@ -63,8 +63,8 @@ uploaded.
   and areas live, and drives the 2D measure tools (which otherwise follow the
   drawing's own units). STL/OBJ carry no unit, so Settings has a "STL / OBJ
   files are in" choice (mm / cm / m / inches) applied when one is opened.
-  Note: in 2D, feet-and-inches formatting is only produced for drawings that
-  are natively in inches — converted metric drawings show decimal inches.
+  Converted values in 2D are prefixed with `~` (the library's approximate
+  marker).
 - **Touch & stylus** — orbit / two-finger pan / pinch-zoom; **long-press** a
   part for its context menu, **double-tap** to frame it; while an Apple Pencil
   or S Pen is in use, stray finger touches are ignored (palm rejection).

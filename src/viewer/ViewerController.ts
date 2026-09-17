@@ -1732,6 +1732,21 @@ export class ViewerController {
   private computeDistance(): void {
     const [a, b] = this.measurePoints;
     this.drawMeasureLine(a, b);
+    this.emitDistanceReadout(a, b);
+  }
+
+  /**
+   * Public: re-emit the readout and labels of the current transient distance
+   * measurement (e.g. after the display unit changed). Other modes keep their
+   * text until the next pick; nothing is redrawn.
+   */
+  refreshMeasureReadout(): void {
+    if (!this.measureEnabled || this.measureMode !== "distance" || this.measurePoints.length < 2) return;
+    const [a, b] = this.measurePoints;
+    this.emitDistanceReadout(a, b);
+  }
+
+  private emitDistanceReadout(a: THREE.Vector3, b: THREE.Vector3): void {
     const dist = a.distanceTo(b);
     const dx = Math.abs(b.x - a.x);
     const dy = Math.abs(b.y - a.y);

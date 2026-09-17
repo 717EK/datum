@@ -79,6 +79,52 @@ const threeExamplesPlugin = {
   },
 };
 
+// cad-simple-viewer forces *decimal* output whenever the measurement unit
+// differs from the drawing's INSUNITS (e.g. feet-inches on a metric drawing
+// comes out as "~ 39.37 in"). Datum wants architectural/engineering formats to
+// survive the conversion, so this rewrites that one function in memory at
+// bundle time. Exact-match on the 1.7.0 text: a dependency bump that changes it
+// fails the build loudly instead of silently losing the behaviour.
+const CAD_VIEWER_LENGTH_ORIG = `function kt(s, e, t = Za) {
+  const i = Vu(s);
+  if (i == null)
+    return nr(s, e, t);
+  const n = s.insunits ?? 0, r = Bu(e, n, i), o = nr(
+    s,
+    r,
+    ju(t),
+    { forceDecimalLength: !0 }
+  ), a = zu(i);
+  return a ? \`\${o} \${a}\` : o;
+}`;
+const CAD_VIEWER_LENGTH_PATCHED = `function kt(s, e, t = Za) {
+  const i = Vu(s);
+  if (i == null)
+    return nr(s, e, t);
+  const n = s.insunits ?? 0, r = Bu(e, n, i);
+  /* Datum: converting to inches with an architectural/engineering LUNITS keeps
+     that format (its own ' and " marks) instead of forced decimal + suffix. */
+  if (i === 1 && ry(Fu(s).lunits)) return nr(s, r, t);
+  const o = nr(
+    s,
+    r,
+    ju(t),
+    { forceDecimalLength: !0 }
+  ), a = zu(i);
+  return a ? \`\${o} \${a}\` : o;
+}`;
+const cadViewerUnitsPlugin = {
+  name: "cad-viewer-units",
+  setup(build) {
+    build.onLoad({ filter: /@mlightcad[\\/]cad-simple-viewer[\\/]dist[\\/]cad-simple-viewer\.js$/ }, (a) => {
+      const src = readFileSync(a.path, "utf8");
+      const n = src.split(CAD_VIEWER_LENGTH_ORIG).length - 1;
+      if (n !== 1) throw new Error(`[cad-viewer-units] expected exactly one match of the length formatter in ${a.path}, found ${n} — re-verify after the dependency bump.`);
+      return { contents: src.replace(CAD_VIEWER_LENGTH_ORIG, CAD_VIEWER_LENGTH_PATCHED), loader: "js" };
+    });
+  },
+};
+
 // --- Static shell + service worker -----------------------------------------
 function walk(dir, base = dir) {
   const out = [];
@@ -202,7 +248,7 @@ const ctx = await esbuild.context({
     __APP_VERSION__: JSON.stringify(pkg.version),
     __BUILD_HASH__: JSON.stringify(buildStamp()),
   },
-  plugins: [threeExamplesPlugin, wasmGzipPlugin, inlineWorkerPlugin, finalizePlugin],
+  plugins: [threeExamplesPlugin, cadViewerUnitsPlugin, wasmGzipPlugin, inlineWorkerPlugin, finalizePlugin],
   minify: prod,
   sourcemap: prod ? false : "inline",
   treeShaking: true,

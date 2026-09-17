@@ -390,6 +390,7 @@ export function mountModel(
     controller,
     refreshUnits: () => {
       measurements.refreshUnits();
+      controller.refreshMeasureReadout();
       info.update(selectedInfo);
     },
     dispose: () => {
