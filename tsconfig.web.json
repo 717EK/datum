@@ -1,0 +1,28 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "obsidian": [
+        "src/web/obsidian-shim.ts"
+      ]
+    },
+    "types": [
+      "obsidian"
+    ]
+  },
+  "include": [
+    "src/web/**/*.ts",
+    "src/viewer/**/*.ts",
+    "src/ui/**/*.ts",
+    "src/annotations/**/*.ts",
+    "src/settings.ts",
+    "src/types.ts",
+    "src/occt-import-js.d.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

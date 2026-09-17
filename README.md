@@ -1,6 +1,6 @@
 # STEP Viewer for Obsidian
 
-View CAD models directly inside Obsidian in an interactive 3D viewer. Click a
+View CAD models directly inside Obsidian in an interactive 3D viewer — or as an [installable web app](#web-app--pwa-install-on-phone-tablet-or-pc) on phone, tablet and PC. Click a
 supported file in the file explorer and it opens in a
 [`three.js`](https://threejs.org/)-powered viewer with orbit / pan / zoom, model
 colours, edges, measurement, annotations and a navigation cube — or embed a
@@ -36,6 +36,53 @@ FreeCAD documents.
 ![3](assets/3.png)
 
 ![4](assets/4.png)
+
+## Web app / PWA (install on phone, tablet or PC)
+
+The same viewer also ships as a standalone **installable web app** — no
+Obsidian needed. Open a `.step` / `.stp` / `.stl` / `.obj` / `.FCStd` file
+from your device; everything is parsed **locally in the browser** (OpenCASCADE
+compiled to WASM, in a Web Worker) and nothing is uploaded.
+
+- **Install** — in Chrome / Edge (desktop + Android) the header shows an
+  *Install app* button that triggers the native prompt. On iOS Safari and other
+  browsers it opens step-by-step instructions (Share → Add to Home Screen).
+  When the app is already running installed, the button is hidden. Opened from
+  a `file://` URL or a non-HTTPS origin, install/update are unavailable and the
+  settings panel says why.
+- **Open with** — the installed app registers as a handler for CAD files, so
+  it shows up in the OS "Open with…" list. Drag-and-drop and **Ctrl/Cmd+O**
+  work too.
+- **Auto-update** — every build stamps `sw.js` with a content hash. The app
+  re-checks on launch, on focus, when back online and hourly; when a newer build
+  exists it shows an **Update available** popup (with a persistent *Update*
+  button in the header). Accepting swaps to the new version and reloads once;
+  the app, styles, manifest and icons refresh together, and the old cache is
+  purged. It works offline after the first visit.
+- **Exports** — *Screenshot* (PNG) and *Export OBJ* download to your device.
+  Annotations and pinned measurements persist per file name in local storage.
+- **Settings** (gear icon) — theme, mesh quality profile, missing-face
+  reconstruction, geometry cache, and *Check for updates*.
+
+### Build & run
+
+```sh
+npm install
+npm run build:web      # → dist/  (typechecks, then bundles + generates sw.js and icons)
+npm run dev:web        # watch + serve dist/ at http://localhost:8787
+```
+
+Deploy `dist/` to any static host over HTTPS. A GitHub Pages workflow is
+included (`.github/workflows/pages.yml`): enable *Pages → Source: GitHub
+Actions* in the repo settings and every push to `main` publishes a new build.
+All asset URLs are relative, so it works from a sub-path
+(`https://<user>.github.io/<repo>/`).
+
+How it's wired: `src/web/app.ts` is the shell, `src/web/pwa.ts` handles
+install + update, and `src/web/obsidian-shim.ts` is a small browser stand-in
+for the `obsidian` module (DOM helpers, Lucide icons, notices, context menu)
+so the viewer sources run unmodified in both targets. `esbuild.web.mjs`
+aliases `obsidian` to the shim.
 
 ## Install
 

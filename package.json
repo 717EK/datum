@@ -7,7 +7,11 @@
     "patch-occt": "node scripts/patch-occt-memory.mjs",
     "dev": "npm run patch-occt && node esbuild.config.mjs",
     "build": "npm run patch-occt && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-    "typecheck": "tsc -noEmit -skipLibCheck"
+    "typecheck": "tsc -noEmit -skipLibCheck",
+    "build:web": "npm run patch-occt && tsc -p tsconfig.web.json && node esbuild.web.mjs",
+    "dev:web": "npm run patch-occt && node esbuild.web.mjs --serve",
+    "icons": "node scripts/make-icons.mjs",
+    "typecheck:web": "tsc -p tsconfig.web.json"
   },
   "keywords": [
     "obsidian",
@@ -23,6 +27,7 @@
     "@types/node": "^20.11.0",
     "@types/three": "^0.160.0",
     "esbuild": "^0.20.0",
+    "lucide": "^1.46.0",
     "obsidian": "latest",
     "tslib": "^2.6.2",
     "typescript": "^5.4.0"
@@ -31,5 +36,8 @@
     "fflate": "^0.8.3",
     "occt-import-js": "0.0.23",
     "three": "^0.160.0"
+  },
+  "allowScripts": {
+    "esbuild@0.20.2": true
   }
 }
