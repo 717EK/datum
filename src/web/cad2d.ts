@@ -53,7 +53,7 @@ let inited: Promise<void> | null = null;
 let currentTheme: "light" | "dark" = "light";
 // Phones/tablets: keep MTEXT layout on the main thread (less peak memory).
 // Desktop: run it in the worker so heavy text sheets don't block input.
-const isMobileUA = /Android|iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+const isMobileUA = /Android|iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 0);
 
 /** Drawing background follows the app theme: white paper in light mode, black in dark.
  *  The viewer inverts ACI 7 (black/white) entities to match, so lines never vanish. */

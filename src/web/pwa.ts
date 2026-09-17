@@ -53,7 +53,7 @@ export function isStandalone(): boolean {
 
 export function platformKind(): "ios" | "android" | "desktop" {
   const ua = navigator.userAgent;
-  const iPadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+  const iPadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 0;
   if (/iPhone|iPad|iPod/.test(ua) || iPadOS) return "ios";
   if (/Android/.test(ua)) return "android";
   return "desktop";

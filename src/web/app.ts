@@ -234,7 +234,14 @@ class WebApp {
     mark.createSpan({ cls: "sv-company-mark", attr: { role: "img", "aria-label": COMPANY } });
     setTooltip(mark, COMPANY);
 
-    this.fileInput = r.createEl("input", { attr: { type: "file", accept: ACCEPT, hidden: "" } });
+    // Mobile pickers (iOS Files, Android's document picker) filter by MIME
+    // types they recognise, and CAD extensions such as .dwg/.dxf/.step aren't
+    // registered there — files show up greyed out and can't be chosen. So on
+    // phones/tablets the picker is left unrestricted and `openFile` validates
+    // the extension itself; desktop keeps the filter for convenience.
+    this.fileInput = r.createEl("input", {
+      attr: Platform.isMobile ? { type: "file", hidden: "" } : { type: "file", accept: ACCEPT, hidden: "" },
+    });
     this.fileInput.addEventListener("change", () => {
       const f = this.fileInput.files?.[0];
       if (f) void this.openFile(f);
@@ -437,7 +444,8 @@ class WebApp {
 
   /** Prefer the File System Access picker (gives a re-openable handle). */
   private async pickFile(): Promise<void> {
-    if (showOpenFilePicker) {
+    // The typed picker filters by MIME too, so it's desktop-only (see fileInput).
+    if (showOpenFilePicker && !Platform.isMobile) {
       try {
         const [h] = await showOpenFilePicker({
           multiple: false,
@@ -775,7 +783,7 @@ class WebApp {
 
   private showInstallSheet(): void {
     const ua = navigator.userAgent;
-    const iPadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+    const iPadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 0;
     const kind = /iPhone|iPad|iPod/.test(ua) || iPadOS ? "ios" : /Android/.test(ua) ? "android" : "desktop";
     const isFirefox = /Firefox/.test(ua);
     const isSafari = /Safari/.test(ua) && !/Chrome|Chromium|Edg|OPR|Android/.test(ua);

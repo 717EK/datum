@@ -231,7 +231,7 @@ export function setTooltip(el: HTMLElement, tooltip: string, _opts?: TooltipOpti
 // --- Platform ----------------------------------------------------------------
 
 const ua = navigator.userAgent;
-const iPadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+const iPadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 0;
 const isIos = /iPhone|iPad|iPod/.test(ua) || iPadOS;
 const isAndroid = /Android/.test(ua);
 const isPhone = (/iPhone|iPod/.test(ua) || (isAndroid && /Mobile/.test(ua))) && !iPadOS;

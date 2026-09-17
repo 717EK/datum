@@ -87,6 +87,10 @@ active worker and one `step-viewer-<version>` cache.
   (`enableProductionFeedback: false`). Its INP measurement itself was real
   (2D canvas handlers on the main thread) → MTEXT now runs in the worker on
   desktop (`useMainThreadDraw: isMobileUA`).
+- **Mobile file pickers grey out CAD files** when `<input accept>` lists MIME
+  types/extensions iOS/Android don't know (.dwg/.dxf, even .step). On mobile the
+  input has **no accept** and `showOpenFilePicker` is skipped; `openFile`
+  validates the extension. iPadOS detection = Macintosh UA + maxTouchPoints > 0.
 - Source files are CRLF: shell heredoc/sed patches break; use the Edit tool.
 - **Vercel blocks deploys whose commit author isn't a GitHub account it knows**
   (`COMMIT_AUTHOR_REQUIRED`, state BLOCKED, no build logs) once the project is
