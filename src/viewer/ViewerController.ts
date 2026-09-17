@@ -18,6 +18,14 @@ const AXIS_COLORS = { x: 0xe5484d, y: 0x30a46c, z: 0x3b82f6 };
 const CLICK_MOVE_THRESHOLD = 5;
 // Fingers wander more than a mouse, so allow a larger slop for touch taps.
 const TOUCH_MOVE_THRESHOLD = 12;
+// Touch / stylus navigation (no right button, no hover): a stationary press
+// this long opens the context menu; two taps this close in time and space
+// frame the part (like a double-click).
+const LONG_PRESS_MS = 550;
+const DOUBLE_TAP_MS = 350;
+const DOUBLE_TAP_PX = 30;
+// After a stylus lifts, keep ignoring finger touches this long (palm rejection).
+const PEN_GRACE_MS = 300;
 const ROLL_DURATION = 0.28; // seconds
 // On-screen size factor for measurement / annotation markers: their world
 // radius is set each frame to `distance * MARKER_SCREEN` so they keep a roughly
@@ -204,6 +212,15 @@ export class ViewerController {
   private pointerNdc = new THREE.Vector2();
   private hoverPending = false;
   private dragging = false;
+  // Touch/stylus gesture state (see LONG_PRESS_MS / DOUBLE_TAP_MS).
+  private longPressTimer: number | null = null;
+  private longPressFired = false;
+  private lastTapAt = 0;
+  private lastTapX = 0;
+  private lastTapY = 0;
+  private penDown = false;
+  private penUpAt = 0;
+  private lastSyntheticDoubleAt = 0;
   /** Called with the hovered part, or null when nothing is under the cursor. */
   onHover: ((info: PartInfo | null) => void) | null = null;
   /** Called when a part is clicked (selected), or null when clicking empty space. */
@@ -294,6 +311,14 @@ export class ViewerController {
     el.addEventListener("pointerleave", this.onPointerLeave);
     el.addEventListener("dblclick", this.onDoubleClick);
     el.addEventListener("contextmenu", this.onContextMenuEvent);
+    el.addEventListener("pointercancel", this.onPointerCancel);
+    // Palm rejection: capture on the host so this runs before OrbitControls'
+    // own listeners on the canvas. While a stylus (Apple Pencil, S Pen…) is
+    // down — and briefly after — finger touches are swallowed, so a resting
+    // hand can't orbit or pan the view out from under the pen.
+    for (const type of ["pointerdown", "pointermove", "pointerup"] as const) {
+      host.addEventListener(type, this.onPalmGuard, true);
+    }
 
     // Obsidian resizes leaves without firing window.resize; observe the host.
     this.ro = new ResizeObserver(() => this.onResize());
@@ -1373,13 +1398,78 @@ export class ViewerController {
     this.pointerDownX = e.clientX;
     this.pointerDownY = e.clientY;
     this.dragging = true;
+    this.longPressFired = false;
+    this.clearLongPress();
+    // Touch and stylus have no right button: a held, stationary press stands
+    // in for right-click and opens the part context menu. Primary pointer
+    // only, so a second finger (pinch) never triggers it.
+    if ((e.pointerType === "touch" || e.pointerType === "pen") && e.isPrimary && e.button === 0) {
+      const { clientX, clientY } = e;
+      this.longPressTimer = window.setTimeout(() => {
+        this.longPressTimer = null;
+        if (!this.dragging) return;
+        this.longPressFired = true;
+        this.openContextMenu(clientX, clientY);
+      }, LONG_PRESS_MS);
+    }
+  };
+
+  private clearLongPress(): void {
+    if (this.longPressTimer != null) {
+      window.clearTimeout(this.longPressTimer);
+      this.longPressTimer = null;
+    }
+  }
+
+  private onPointerCancel = (): void => {
+    this.dragging = false;
+    this.clearLongPress();
+  };
+
+  /** Capture-phase guard on the host: drop finger input while a stylus is active. */
+  private onPalmGuard = (e: PointerEvent): void => {
+    if (e.pointerType === "pen") {
+      if (e.type === "pointerdown") this.penDown = true;
+      else if (e.type === "pointerup") {
+        this.penDown = false;
+        this.penUpAt = performance.now();
+      }
+      return;
+    }
+    if (e.pointerType !== "touch") return;
+    if (this.penDown || performance.now() - this.penUpAt < PEN_GRACE_MS) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    }
   };
 
   private onPointerUp = (e: PointerEvent): void => {
     this.dragging = false;
+    this.clearLongPress();
+    // The long-press already opened the menu; lifting the finger is not a tap.
+    if (this.longPressFired) {
+      this.longPressFired = false;
+      return;
+    }
     const threshold =
       e.pointerType === "touch" ? TOUCH_MOVE_THRESHOLD : CLICK_MOVE_THRESHOLD;
     const moved = Math.hypot(e.clientX - this.pointerDownX, e.clientY - this.pointerDownY);
+    // Double-tap (touch / stylus) frames the part, like a mouse double-click.
+    // Browsers are inconsistent about synthesising dblclick from taps, so do
+    // it here and let onDoubleClick ignore a native one that follows.
+    if ((e.pointerType === "touch" || e.pointerType === "pen") && e.button === 0 && moved <= threshold) {
+      const now = performance.now();
+      const near = Math.hypot(e.clientX - this.lastTapX, e.clientY - this.lastTapY) <= DOUBLE_TAP_PX;
+      if (now - this.lastTapAt < DOUBLE_TAP_MS && near) {
+        this.lastTapAt = 0;
+        this.lastSyntheticDoubleAt = now;
+        this.onDoubleClick(e);
+        return;
+      }
+      this.lastTapAt = now;
+      this.lastTapX = e.clientX;
+      this.lastTapY = e.clientY;
+    }
     // Right button: open the context menu here (on release) rather than on the
     // browser `contextmenu` event, which on some platforms (Linux) fires on
     // press — so a right-drag pan would pop the menu mid-pan. Only a stationary
@@ -1405,6 +1495,8 @@ export class ViewerController {
    */
   private onDoubleClick = (e: MouseEvent): void => {
     if (this.measureEnabled || this.annotateEnabled) return;
+    // A native dblclick right after our synthesised double-tap is the same gesture.
+    if (e.type === "dblclick" && performance.now() - this.lastSyntheticDoubleAt < DOUBLE_TAP_MS) return;
     const rect = this.renderer.domElement.getBoundingClientRect();
     const ndc = new THREE.Vector2(
       ((e.clientX - rect.left) / rect.width) * 2 - 1,
@@ -2166,6 +2258,11 @@ export class ViewerController {
     el.removeEventListener("pointerleave", this.onPointerLeave);
     el.removeEventListener("dblclick", this.onDoubleClick);
     el.removeEventListener("contextmenu", this.onContextMenuEvent);
+    el.removeEventListener("pointercancel", this.onPointerCancel);
+    for (const type of ["pointerdown", "pointermove", "pointerup"] as const) {
+      this.host.removeEventListener(type, this.onPalmGuard, true);
+    }
+    this.clearLongPress();
 
     for (const d of this.disposables) d.dispose();
     this.disposables = [];

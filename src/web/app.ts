@@ -1,10 +1,11 @@
 /**
- * STEP Viewer — web / PWA entry point.
+ * Datum — web / PWA entry point (TAXI Design Studio).
  *
  * A standalone shell around the same viewer the Obsidian plugin uses
  * (`mountViewer` / `mountModel`): open a local STEP / STP / STL / OBJ / FCStd
- * file (picker, drag-and-drop, or the OS "Open with…" of an installed app),
- * parse it entirely on-device, and render it. Nothing is uploaded anywhere.
+ * file (picker, drag-and-drop, "Open with…" of the installed app, or the
+ * recent-files list), parse it entirely on-device, and render it. Nothing is
+ * uploaded anywhere.
  *
  * The load pipeline mirrors `StepView.parseAndMount` (cache, quality tiers,
  * coarser retry, no-geometry / wireframe diagnostics) but reads from `File`
@@ -23,9 +24,14 @@ import { hasRenderableMeshes, isWireframeOnly } from "../viewer/StepToThree";
 import { METADATA_MAX_BYTES } from "../viewer/StepMeta";
 import { StepViewerSettings, DEFAULT_SETTINGS } from "../settings";
 import { initPwa, InstallMode, PwaHandle } from "./pwa";
+import { RecentsStore, RecentEntry, entryId } from "./recents";
 
 declare const __APP_VERSION__: string;
 declare const __BUILD_HASH__: string;
+
+export const APP_NAME = "Datum";
+const APP_TAGLINE = "Open STEP, STL, OBJ and FreeCAD models — on this device, nothing uploaded.";
+const COMPANY = "TAXI Design Studio";
 
 const SUPPORTED = ["step", "stp", "stl", "obj", "fcstd"];
 const ACCEPT = ".step,.stp,.stl,.obj,.fcstd,model/step,model/stl,application/sla,model/obj";
@@ -33,6 +39,14 @@ const SETTINGS_KEY = "step-viewer:settings";
 const THEME_KEY = "step-viewer:theme";
 
 type Theme = "auto" | "light" | "dark";
+
+// File System Access API (Chromium). Typed locally — not in the DOM lib yet.
+interface OpenPickerOptions {
+  multiple?: boolean;
+  types?: { description?: string; accept: Record<string, string[]> }[];
+}
+type ShowOpenFilePicker = (o?: OpenPickerOptions) => Promise<FileSystemFileHandle[]>;
+const showOpenFilePicker = (window as unknown as { showOpenFilePicker?: ShowOpenFilePicker }).showOpenFilePicker;
 
 // --- Settings ----------------------------------------------------------------
 
@@ -74,21 +88,35 @@ function currentTheme(): Theme {
   return t === "light" || t === "dark" ? t : "auto";
 }
 
+function relativeTime(ts: number): string {
+  const d = Date.now() - ts;
+  const m = Math.round(d / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} h ago`;
+  const days = Math.round(h / 24);
+  if (days < 7) return `${days} d ago`;
+  return new Date(ts).toLocaleDateString();
+}
+
 // --- App ---------------------------------------------------------------------
 
 class WebApp {
   private plugin = new Plugin();
   private settings = loadSettings();
   private cache = new GeometryCache();
+  private recents = new RecentsStore();
   private viewer: ViewerHandle | null = null;
   private loadToken = 0;
   private currentFile: File | null = null;
+  private currentEntry: RecentEntry | null = null;
 
   private root: HTMLElement;
-  private header!: HTMLElement;
   private titleEl!: HTMLElement;
   private host!: HTMLElement;
-  private empty!: HTMLElement;
+  private welcome!: HTMLElement;
+  private recentsEl!: HTMLElement;
   private installBtn!: HTMLElement;
   private updateBtn!: HTMLElement;
   private fileInput!: HTMLInputElement;
@@ -106,6 +134,7 @@ class WebApp {
     darkQuery.addEventListener("change", () => applyTheme(currentTheme()));
     this.buildShell();
     this.wireFileSources();
+    void this.renderRecents();
     this.pwa = initPwa(__APP_VERSION__, {
       onInstallMode: (mode, d) => {
         this.installMode = mode;
@@ -113,7 +142,7 @@ class WebApp {
         this.syncInstallButton();
       },
       onUpdateAvailable: (apply) => this.showUpdate(apply),
-      onInstalled: () => new Notice("STEP Viewer installed. You can open CAD files with it from your file manager."),
+      onInstalled: () => new Notice(`${APP_NAME} installed. You can open CAD files with it from your file manager.`),
       onCheckState: (state) => {
         this.updateBtn.toggleClass("is-checking", state === "checking");
       },
@@ -127,11 +156,12 @@ class WebApp {
     r.empty();
     r.addClass("sv-app");
 
-    const header = (this.header = r.createDiv({ cls: "sv-header" }));
-    const brand = header.createDiv({ cls: "sv-brand" });
-    const logo = brand.createSpan({ cls: "sv-logo" });
-    setIcon(logo, "box");
-    brand.createSpan({ cls: "sv-brand-name", text: "STEP Viewer" });
+    const header = r.createDiv({ cls: "sv-header" });
+    const brand = header.createEl("button", { cls: "sv-brand" });
+    setTooltip(brand, "Home");
+    brand.createSpan({ cls: "sv-logo" });
+    brand.createSpan({ cls: "sv-brand-name", text: APP_NAME });
+    brand.addEventListener("click", () => this.goHome());
     this.titleEl = header.createDiv({ cls: "sv-title", text: "" });
 
     const actions = header.createDiv({ cls: "sv-actions" });
@@ -140,7 +170,7 @@ class WebApp {
     setIcon(openBtn.createSpan({ cls: "sv-btn-icon" }), "folder-open");
     openBtn.createSpan({ cls: "sv-btn-label", text: "Open" });
     setTooltip(openBtn, "Open a STEP / STP / STL / OBJ / FCStd file");
-    openBtn.addEventListener("click", () => this.fileInput.click());
+    openBtn.addEventListener("click", () => void this.pickFile());
 
     this.updateBtn = actions.createEl("button", { cls: "sv-btn sv-btn-update" });
     setIcon(this.updateBtn.createSpan({ cls: "sv-btn-icon" }), "refresh-cw");
@@ -165,11 +195,15 @@ class WebApp {
       this.toggleSettings(settingsBtn);
     });
 
-    // Viewer area + empty state.
+    // Viewer area, welcome page, and the company mark that is always in view.
     const main = r.createDiv({ cls: "sv-main" });
     this.host = main.createDiv({ cls: "step-viewer-host sv-host" });
-    this.empty = main.createDiv({ cls: "sv-empty" });
-    this.renderEmpty();
+    this.host.hide();
+    this.welcome = main.createDiv({ cls: "sv-welcome" });
+    this.buildWelcome();
+    const mark = main.createDiv({ cls: "sv-company" });
+    mark.createSpan({ cls: "sv-company-mark", attr: { role: "img", "aria-label": COMPANY } });
+    setTooltip(mark, COMPANY);
 
     this.fileInput = r.createEl("input", { attr: { type: "file", accept: ACCEPT, hidden: "" } });
     this.fileInput.addEventListener("change", () => {
@@ -179,31 +213,134 @@ class WebApp {
     });
   }
 
-  private renderEmpty(): void {
-    const e = this.empty;
-    e.empty();
-    const card = e.createDiv({ cls: "sv-empty-card" });
-    const ic = card.createDiv({ cls: "sv-empty-icon" });
-    setIcon(ic, "box");
-    card.createEl("h1", { text: "Open a CAD model" });
-    card.createEl("p", {
-      text: "STEP / STP, STL, OBJ and FreeCAD (.FCStd). Files are parsed on this device and never uploaded.",
-      cls: "sv-muted",
+  private buildWelcome(): void {
+    const w = this.welcome;
+    w.empty();
+    const left = w.createDiv({ cls: "sv-welcome-left" });
+
+    // Hero: logo + name + tagline.
+    const hero = left.createDiv({ cls: "sv-hero" });
+    hero.createDiv({ cls: "sv-hero-logo" });
+    const text = hero.createDiv({ cls: "sv-hero-text" });
+    text.createEl("h1", { text: APP_NAME });
+    text.createEl("p", { text: APP_TAGLINE, cls: "sv-muted" });
+    text.createEl("p", { text: `by ${COMPANY}`, cls: "sv-muted sv-small sv-hero-by" });
+
+    // The big open box (also the drop target).
+    const box = left.createEl("button", { cls: "sv-dropbox" });
+    const bi = box.createDiv({ cls: "sv-dropbox-icon" });
+    setIcon(bi, "folder-open");
+    box.createDiv({ cls: "sv-dropbox-title", text: "Open a CAD file" });
+    box.createDiv({
+      cls: "sv-dropbox-sub sv-muted",
+      text: Platform.isMobile ? "Tap to choose a file from this device" : "Click to choose, or drop a file here",
     });
-    const btn = card.createEl("button", { cls: "sv-btn sv-btn-primary sv-btn-lg" });
-    setIcon(btn.createSpan({ cls: "sv-btn-icon" }), "folder-open");
-    btn.createSpan({ text: "Choose file" });
-    btn.addEventListener("click", () => this.fileInput.click());
-    if (!Platform.isMobile) card.createEl("p", { text: "…or drop a file anywhere on this page.", cls: "sv-muted sv-small" });
-    card.createEl("p", { text: `v${__APP_VERSION__} · build ${__BUILD_HASH__}`, cls: "sv-muted sv-tiny sv-version" });
+    const fmts = box.createDiv({ cls: "sv-formats" });
+    for (const f of ["STEP", "STP", "STL", "OBJ", "FCStd"]) fmts.createSpan({ cls: "sv-chip", text: f });
+    box.addEventListener("click", () => void this.pickFile());
+
+    left.createDiv({ cls: "sv-muted sv-tiny sv-version", text: `v${__APP_VERSION__} · ${__BUILD_HASH__}` });
+
+    // Recents.
+    const right = w.createDiv({ cls: "sv-welcome-right" });
+    const rh = right.createDiv({ cls: "sv-recent-head" });
+    rh.createEl("h2", { text: "Recently opened" });
+    const clear = rh.createEl("button", { cls: "sv-btn sv-btn-sm sv-recent-clear", text: "Clear" });
+    clear.addEventListener("click", () => {
+      void this.recents.clear().then(() => this.renderRecents());
+    });
+    this.recentsEl = right.createDiv({ cls: "sv-recent-list" });
+  }
+
+  private async renderRecents(): Promise<void> {
+    const list = await this.recents.list();
+    const el = this.recentsEl;
+    el.empty();
+    const clearBtn = this.welcome.querySelector(".sv-recent-clear") as HTMLElement | null;
+    clearBtn?.toggle(list.length > 0);
+    if (!list.length) {
+      const empty = el.createDiv({ cls: "sv-recent-empty sv-muted" });
+      empty.createDiv({ text: "Nothing yet." });
+      empty.createDiv({ cls: "sv-small", text: "Models you open will show up here so you can reopen them with one tap." });
+      return;
+    }
+    for (const e of list) {
+      const card = el.createEl("button", { cls: "sv-recent" });
+      const thumb = card.createDiv({ cls: "sv-recent-thumb" });
+      if (e.thumb) {
+        thumb.createEl("img", { attr: { src: e.thumb, alt: "" } });
+      } else {
+        setIcon(thumb, "box");
+      }
+      const body = card.createDiv({ cls: "sv-recent-body" });
+      body.createDiv({ cls: "sv-recent-name", text: e.name });
+      const canReopen = !!e.handle || e.hasBlob;
+      body.createDiv({
+        cls: "sv-recent-meta sv-muted",
+        text: `${formatFileSize(e.size)} · ${relativeTime(e.openedAt)}${canReopen ? "" : " · open again to view"}`,
+      });
+      const rm = card.createEl("button", { cls: "sv-recent-rm clickable-icon" });
+      setIcon(rm, "x");
+      setTooltip(rm, "Remove from list");
+      rm.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        void this.recents.remove(e.id).then(() => this.renderRecents());
+      });
+      card.addEventListener("click", () => void this.openRecent(e));
+    }
+  }
+
+  private async openRecent(e: RecentEntry): Promise<void> {
+    const file = await this.recents.reopen(e);
+    if (!file) {
+      new Notice(`"${e.name}" isn't stored on this device any more — please open it again.`);
+      void this.pickFile();
+      return;
+    }
+    await this.openFile(file, e.handle);
   }
 
   private setTitle(name: string | null): void {
     this.titleEl.setText(name ?? "");
-    document.title = name ? `${name} – STEP Viewer` : "STEP Viewer";
+    document.title = name ? `${name} – ${APP_NAME}` : `${APP_NAME} · ${COMPANY}`;
+  }
+
+  /** Back to the welcome page (keeps the parsed model cache; drops the scene). */
+  private goHome(): void {
+    this.loadToken++;
+    this.teardown();
+    this.currentFile = null;
+    this.currentEntry = null;
+    this.host.hide();
+    this.welcome.show();
+    this.setTitle(null);
+    void this.renderRecents();
   }
 
   // --- File sources ------------------------------------------------------
+
+  /** Prefer the File System Access picker (gives a re-openable handle). */
+  private async pickFile(): Promise<void> {
+    if (showOpenFilePicker) {
+      try {
+        const [h] = await showOpenFilePicker({
+          multiple: false,
+          types: [
+            {
+              description: "CAD models",
+              accept: { "model/step": [".step", ".stp"], "model/stl": [".stl"], "model/obj": [".obj"], "application/x-freecad": [".fcstd"] },
+            },
+          ],
+        });
+        if (h) await this.openFile(await h.getFile(), h);
+        return;
+      } catch (err) {
+        if ((err as Error)?.name === "AbortError") return; // user cancelled
+        // Fall through to the classic input (e.g. picker blocked in an iframe).
+      }
+    }
+    this.fileInput.click();
+  }
 
   private wireFileSources(): void {
     // Drag & drop anywhere.
@@ -223,20 +360,30 @@ class WebApp {
     window.addEventListener("drop", (e) => {
       depth = 0;
       document.body.removeClass("is-dragover");
+      const item = e.dataTransfer?.items?.[0];
       const f = e.dataTransfer?.files?.[0];
       if (!f) return;
       e.preventDefault();
-      void this.openFile(f);
+      const getHandle = (item as DataTransferItem & { getAsFileSystemHandle?: () => Promise<FileSystemHandle | null> } | undefined)
+        ?.getAsFileSystemHandle;
+      if (getHandle) {
+        void getHandle.call(item).then(
+          (h) => this.openFile(f, h && h.kind === "file" ? (h as FileSystemFileHandle) : undefined),
+          () => this.openFile(f),
+        );
+      } else {
+        void this.openFile(f);
+      }
     });
 
-    // Installed PWA: files opened via the OS ("Open with STEP Viewer").
+    // Installed PWA: files opened via the OS ("Open with Datum").
     const lq = (window as unknown as { launchQueue?: { setConsumer(cb: (p: { files: FileSystemFileHandle[] }) => void): void } })
       .launchQueue;
     if (lq) {
       lq.setConsumer((params) => {
         const h = params.files?.[0];
         if (!h) return;
-        void h.getFile().then((f) => this.openFile(f));
+        void h.getFile().then((f) => this.openFile(f, h));
       });
     }
 
@@ -244,7 +391,7 @@ class WebApp {
     window.addEventListener("keydown", (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o") {
         e.preventDefault();
-        this.fileInput.click();
+        void this.pickFile();
       }
     });
   }
@@ -257,7 +404,7 @@ class WebApp {
     this.host.empty();
   }
 
-  async openFile(file: File): Promise<void> {
+  async openFile(file: File, handle?: FileSystemFileHandle): Promise<void> {
     const ext = (file.name.split(".").pop() ?? "").toLowerCase();
     if (!SUPPORTED.includes(ext)) {
       new Notice(`Unsupported file type ".${ext}". Open a STEP, STP, STL, OBJ or FCStd file.`);
@@ -266,9 +413,13 @@ class WebApp {
     const token = ++this.loadToken;
     this.currentFile = file;
     this.teardown();
-    this.empty.hide();
+    this.closeSettings();
+    this.welcome.hide();
     this.setTitle(file.name);
     this.host.show();
+    void this.recents.remember(file, handle).then((e) => {
+      if (token === this.loadToken) this.currentEntry = e;
+    });
 
     if (shouldWarnLargeModel(file.size)) {
       this.showLargeWarning(file.size, () => {
@@ -302,6 +453,7 @@ class WebApp {
             : stlToStepModel(buffer, baseName);
         loadingEl.remove();
         this.viewer = mountModel(host, model, mountOpts);
+        this.afterMount(file, token);
         return;
       }
 
@@ -312,6 +464,7 @@ class WebApp {
         if (token !== this.loadToken) return;
         loadingEl.remove();
         this.viewer = mountModel(host, model, mountOpts);
+        this.afterMount(file, token);
         return;
       }
 
@@ -322,6 +475,7 @@ class WebApp {
           console.info("[STEP Viewer] cache hit", file.name);
           loadingEl.remove();
           this.viewer = mountViewer(host, cached, mountOpts);
+          this.afterMount(file, token);
           return;
         }
       }
@@ -347,11 +501,37 @@ class WebApp {
 
       loadingEl.remove();
       this.viewer = mountViewer(host, result, { ...mountOpts, stepText });
+      this.afterMount(file, token);
     } catch (err) {
       if (token !== this.loadToken) return;
       loadingEl.remove();
       this.showError(file, err, token, deflection);
     }
+  }
+
+  /** Once the scene has settled, grab a small thumbnail for the recents list. */
+  private afterMount(file: File, token: number): void {
+    window.setTimeout(() => {
+      if (token !== this.loadToken || !this.viewer) return;
+      try {
+        const url = this.viewer.controller.captureImage();
+        const img = new Image();
+        img.onload = () => {
+          const W = 192;
+          const H = Math.max(1, Math.round((img.height / img.width) * W));
+          const c = document.createElement("canvas");
+          c.width = W;
+          c.height = H;
+          const ctx = c.getContext("2d");
+          if (!ctx) return;
+          ctx.drawImage(img, 0, 0, W, H);
+          void this.recents.setThumb(entryId(file), c.toDataURL("image/png"));
+        };
+        img.src = url;
+      } catch (err) {
+        console.warn("[recents] thumbnail failed", err);
+      }
+    }, 900);
   }
 
   private retryFaster(file: File, token: number, deflection: number): void {
@@ -426,20 +606,18 @@ class WebApp {
     const label = b.find(".sv-btn-label") as HTMLElement | null;
     switch (this.installMode) {
       case "installed":
+      case "unavailable":
         b.hide();
         break;
       case "prompt":
         b.show();
         label?.setText("Install app");
-        setTooltip(b, "Install STEP Viewer on this device");
+        setTooltip(b, `Install ${APP_NAME} on this device`);
         break;
       case "manual":
         b.show();
         label?.setText("Install app");
-        setTooltip(b, "How to add STEP Viewer to your home screen / desktop");
-        break;
-      case "unavailable":
-        b.hide();
+        setTooltip(b, `How to add ${APP_NAME} to your home screen / desktop`);
         break;
     }
   }
@@ -448,21 +626,16 @@ class WebApp {
     if (this.installMode === "prompt") {
       const ok = await this.pwa.install();
       if (ok) return;
-      // Fall through to instructions if the prompt was dismissed.
     }
     this.showInstallSheet();
   }
 
   private showInstallSheet(): void {
-    const kind = (() => {
-      const ua = navigator.userAgent;
-      const iPadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
-      if (/iPhone|iPad|iPod/.test(ua) || iPadOS) return "ios";
-      if (/Android/.test(ua)) return "android";
-      return "desktop";
-    })();
-    const isFirefox = /Firefox/.test(navigator.userAgent);
-    const isSafari = /Safari/.test(navigator.userAgent) && !/Chrome|Chromium|Edg|OPR|Android/.test(navigator.userAgent);
+    const ua = navigator.userAgent;
+    const iPadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+    const kind = /iPhone|iPad|iPod/.test(ua) || iPadOS ? "ios" : /Android/.test(ua) ? "android" : "desktop";
+    const isFirefox = /Firefox/.test(ua);
+    const isSafari = /Safari/.test(ua) && !/Chrome|Chromium|Edg|OPR|Android/.test(ua);
 
     const steps: string[] =
       kind === "ios"
@@ -475,7 +648,7 @@ class WebApp {
           ? [
               "Open the browser menu (⋮).",
               "Tap “Install app” or “Add to Home screen”.",
-              "Confirm — STEP Viewer appears in your app drawer and can open CAD files.",
+              `Confirm — ${APP_NAME} appears in your app drawer and can open CAD files.`,
             ]
           : isFirefox
             ? [
@@ -486,10 +659,10 @@ class WebApp {
               ? ["In Safari's menu choose File → “Add to Dock…”, then “Add”."]
               : [
                   "Click the install icon at the right end of the address bar (a monitor with a down-arrow),",
-                  "or open the browser menu (⋮) → “Install STEP Viewer…”.",
+                  `or open the browser menu (⋮) → “Install ${APP_NAME}…”.`,
                 ];
 
-    this.modal("Install STEP Viewer", (body) => {
+    this.modal(`Install ${APP_NAME}`, (body) => {
       body.createEl("p", {
         cls: "sv-muted",
         text: "Installed, it runs full-screen, works offline, and shows up in “Open with” for STEP / STL / OBJ files. Updates are picked up automatically.",
@@ -504,9 +677,9 @@ class WebApp {
     this.pendingUpdate = apply;
     this.updateBtn.show();
     this.modal("Update available", (body, close) => {
-      body.createEl("p", { text: "A new version of STEP Viewer has been downloaded. Reload to switch to it — the app, its icon and styles are refreshed together." });
+      body.createEl("p", { text: `A new version of ${APP_NAME} has been downloaded. Reload to switch to it — the app, its icon and styles are refreshed together.` });
       if (this.currentFile) {
-        body.createEl("p", { cls: "sv-muted sv-small", text: `“${this.currentFile.name}” will need to be opened again after the update.` });
+        body.createEl("p", { cls: "sv-muted sv-small", text: `“${this.currentFile.name}” will be in your recent files after the update.` });
       }
       const row = body.createDiv({ cls: "sv-modal-actions" });
       const later = row.createEl("button", { cls: "sv-btn", text: "Later" });
@@ -543,7 +716,6 @@ class WebApp {
       return d.createDiv({ cls: "sv-row-ctl" });
     };
 
-    // Theme
     const themeCtl = row("Theme");
     const themeSel = themeCtl.createEl("select");
     for (const [v, l] of [["auto", "System"], ["light", "Light"], ["dark", "Dark"]] as const) {
@@ -555,7 +727,6 @@ class WebApp {
       applyTheme(themeSel.value as Theme);
     });
 
-    // Quality profile
     const profCtl = row("Mesh quality", "Applies the next time a model is opened.");
     const profSel = profCtl.createEl("select");
     const labels: Record<Exclude<Profile, "custom">, string> = {
@@ -575,7 +746,6 @@ class WebApp {
       }
     });
 
-    // Heal faces
     const healCtl = row("Reconstruct missing faces", "Rebuild planar faces the STEP reader couldn't tessellate.");
     const heal = healCtl.createEl("input", { attr: { type: "checkbox" } });
     heal.checked = s.healFaces;
@@ -584,7 +754,6 @@ class WebApp {
       commit();
     });
 
-    // Cache
     const cacheCtl = row("Cache parsed models", "Files ≥ 15 MB are cached on this device for instant reopening.");
     const cacheCb = cacheCtl.createEl("input", { attr: { type: "checkbox" } });
     cacheCb.checked = s.cacheEnabled;
@@ -606,19 +775,18 @@ class WebApp {
       });
     });
 
-    // Reopen current file (to apply quality)
     if (this.currentFile) {
       const reopenCtl = row("Reopen current model", "Re-parse with the current quality setting.");
       const reopen = reopenCtl.createEl("button", { cls: "sv-btn sv-btn-sm", text: "Reopen" });
       reopen.addEventListener("click", () => {
         const f = this.currentFile;
+        const h = this.currentEntry?.handle;
         this.closeSettings();
-        if (f) void this.openFile(f);
+        if (f) void this.openFile(f, h);
       });
     }
 
-    // Updates
-    const updCtl = row("App version", `v${__APP_VERSION__} · build ${__BUILD_HASH__}${this.installMode === "installed" ? " · installed" : ""}`);
+    const updCtl = row("App version", `v${__APP_VERSION__} · ${__BUILD_HASH__}${this.installMode === "installed" ? " · installed" : ""}`);
     const chk = updCtl.createEl("button", { cls: "sv-btn sv-btn-sm", text: "Check for updates" });
     chk.addEventListener("click", () => {
       if (this.installMode === "unavailable") {
@@ -635,7 +803,7 @@ class WebApp {
     });
 
     const about = pop.createDiv({ cls: "sv-about sv-muted sv-tiny" });
-    about.setText("Viewer core by Ondřej Uhnavý (MIT) · OpenCASCADE via occt-import-js · three.js");
+    about.setText(`${APP_NAME} by ${COMPANY} · viewer core by Ondřej Uhnavý (MIT) · OpenCASCADE via occt-import-js · three.js`);
 
     const close = (e: PointerEvent) => {
       if (!pop.contains(e.target as Node) && e.target !== anchor && !anchor.contains(e.target as Node)) this.closeSettings();
@@ -645,7 +813,6 @@ class WebApp {
     };
     document.addEventListener("pointerdown", close, true);
     document.addEventListener("keydown", key, true);
-    pop.dataset.cleanup = "1";
     (pop as HTMLElement & { _cleanup?: () => void })._cleanup = () => {
       document.removeEventListener("pointerdown", close, true);
       document.removeEventListener("keydown", key, true);
@@ -691,4 +858,4 @@ const rootEl = document.getElementById("app");
 if (!rootEl) throw new Error("#app root missing");
 const webApp = new WebApp(rootEl);
 (window as unknown as { stepViewer: WebApp }).stepViewer = webApp;
-console.info(`[STEP Viewer] web v${__APP_VERSION__} (${__BUILD_HASH__})`);
+console.info(`[STEP Viewer] ${APP_NAME} web v${__APP_VERSION__} (${__BUILD_HASH__})`);

@@ -17,12 +17,12 @@ const outDir = process.argv[2] ?? path.resolve("public/icons");
 mkdirSync(outDir, { recursive: true });
 
 // --- Palette -----------------------------------------------------------------
-const BG_TOP = [37, 99, 235]; // #2563eb
-const BG_BOTTOM = [30, 64, 175]; // #1e40af
-const TOP = [255, 255, 255];
-const LEFT = [191, 219, 254]; // #bfdbfe
-const RIGHT = [147, 197, 253]; // #93c5fd
-const EDGE = [30, 58, 138]; // #1e3a8a
+const BG_TOP = [28, 28, 30]; // #1c1c1e
+const BG_BOTTOM = [10, 10, 11]; // #0a0a0b
+const TOP = [255, 214, 0]; // #FFD600 (TAXI yellow)
+const LEFT = [212, 176, 0]; // #d4b000
+const RIGHT = [166, 138, 0]; // #a68a00
+const EDGE = [10, 10, 11];
 
 // --- Cube polygons in unit space (0..1) ------------------------------------
 function cubeFaces(scale = 1) {
@@ -177,12 +177,12 @@ write("favicon-32.png", 32, { rounded: true, cubeScale: 1.05 });
 const f = cubeFaces(1);
 const pts = (p) => p.map(([x, y]) => `${(x * 100).toFixed(1)},${(y * 100).toFixed(1)}`).join(" ");
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#1e40af"/></linearGradient></defs>
+<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c1c1e"/><stop offset="1" stop-color="#0a0a0b"/></linearGradient></defs>
 <rect width="100" height="100" rx="22" fill="url(#g)"/>
-<g stroke="#1e3a8a" stroke-width="2.4" stroke-linejoin="round">
-<polygon points="${pts(f.top)}" fill="#ffffff"/>
-<polygon points="${pts(f.left)}" fill="#bfdbfe"/>
-<polygon points="${pts(f.right)}" fill="#93c5fd"/>
+<g stroke="#0a0a0b" stroke-width="2.4" stroke-linejoin="round">
+<polygon points="${pts(f.top)}" fill="#FFD600"/>
+<polygon points="${pts(f.left)}" fill="#d4b000"/>
+<polygon points="${pts(f.right)}" fill="#a68a00"/>
 </g>
 </svg>
 `;

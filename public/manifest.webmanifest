@@ -1,35 +1,77 @@
 {
-  "name": "STEP Viewer",
-  "short_name": "STEP Viewer",
+  "name": "Datum — CAD viewer by TAXI Design Studio",
+  "short_name": "Datum",
   "description": "Open STEP, STP, STL, OBJ and FreeCAD models in a 3D viewer. Files never leave your device.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "display_override": ["window-controls-overlay", "standalone"],
+  "display_override": [
+    "window-controls-overlay",
+    "standalone"
+  ],
   "orientation": "any",
-  "background_color": "#1e1e1e",
-  "theme_color": "#1e1e1e",
+  "background_color": "#121212",
+  "theme_color": "#121212",
   "lang": "en",
-  "categories": ["productivity", "utilities"],
+  "categories": [
+    "productivity",
+    "utilities"
+  ],
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
-    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
   ],
   "file_handlers": [
     {
       "action": "./",
       "accept": {
-        "model/step": [".step", ".stp"],
-        "application/step": [".step", ".stp"],
-        "model/stl": [".stl"],
-        "application/sla": [".stl"],
-        "model/obj": [".obj"],
-        "application/x-freecad": [".fcstd"]
+        "model/step": [
+          ".step",
+          ".stp"
+        ],
+        "application/step": [
+          ".step",
+          ".stp"
+        ],
+        "model/stl": [
+          ".stl"
+        ],
+        "application/sla": [
+          ".stl"
+        ],
+        "model/obj": [
+          ".obj"
+        ],
+        "application/x-freecad": [
+          ".fcstd"
+        ]
       }
     }
   ],
-  "launch_handler": { "client_mode": "focus-existing" }
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  }
 }
