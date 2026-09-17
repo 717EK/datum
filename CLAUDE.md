@@ -4,7 +4,7 @@
 [ondreu/STEP-viewer](https://github.com/ondreu/STEP-viewer) (an **Obsidian
 plugin**, MIT, v1.13.0) with a second build target added — a standalone,
 installable web app that opens STEP/STP/STL/OBJ/FCStd files locally on phone,
-tablet and PC. Git: `origin` = https://github.com/717EK/datum (private, main);
+tablet and PC. Git: `origin` = https://github.com/717EK/datum (**public**, main);
 `upstream` = the original repo (full history kept).
 
 ## State (2026-09-17, evening)
