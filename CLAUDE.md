@@ -76,6 +76,14 @@ active worker and one `step-viewer-<version>` cache.
   `threeExamplesPlugin` in esbuild.web.mjs appends it. `tsconfig.web.json`
   uses `moduleResolution: bundler` for their `/register` subpath export.
 - **Licensing (decided 2026-09-17)**: personal use, repo **public/open source**. Repo code = MIT (LICENSE); the built web app = GPL-3.0 because of LibreDWG (LICENSE.GPL-3.0, LICENSES.md); the app links to the source from Settings. No proprietary parser needed.
+- **2D theme/background**: the UI plugin follows the drawing's COLORTHEME sysvar
+  once a doc is open (1=light) — set it in open sysVars and via AcDbSysVarManager
+  on switches. MODELBKCOLOR as an open-time sysvar breaks layout resolution in
+  cad-simple-viewer 1.7 → only PAPERBKCOLOR at open; model bg via
+   after open (also re-inverts ACI 7 lines).
+- App default theme is **light** (changed 2026-09-17); "Follow system" is opt-in.
+- The black "INP Issue" card Vivek saw was the **Vercel Toolbar** (only shown to
+  logged-in team members); disabled via .
 - Source files are CRLF: shell heredoc/sed patches break; use the Edit tool.
 - **Vercel blocks deploys whose commit author isn't a GitHub account it knows**
   (`COMMIT_AUTHOR_REQUIRED`, state BLOCKED, no build logs) once the project is

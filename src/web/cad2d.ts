@@ -18,11 +18,12 @@
 import {
   AcApDocManager,
   acedApplyUiTheme,
+  layoutBackgroundColorFromRgb,
   AcEdOpenMode,
   LIBREDWG_PARSER_WORKER_FILE,
   MTEXT_RENDERER_WORKER_FILE,
 } from "@mlightcad/cad-simple-viewer";
-import { AcDbDatabaseConverterManager, AcDbFileType } from "@mlightcad/data-model";
+import { AcDbDatabaseConverterManager, AcDbFileType, AcDbSystemVariables, AcDbSysVarManager } from "@mlightcad/data-model";
 import { AcDbLibreDwgConverter } from "@mlightcad/libredwg-converter";
 import { acuiRegisterSimpleUiPlugin } from "@mlightcad/cad-simple-ui-plugin/register";
 
@@ -49,6 +50,30 @@ const WORKER_DIR = "./workers/";
 const FONT_BASE_URL = "https://cdn.jsdelivr.net/gh/mlightcad/cad-data@main/";
 
 let inited: Promise<void> | null = null;
+let currentTheme: "light" | "dark" = "light";
+// Phones/tablets: keep MTEXT layout on the main thread (less peak memory).
+// Desktop: run it in the worker so heavy text sheets don't block input.
+const isMobileUA = /Android|iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+
+/** Drawing background follows the app theme: white paper in light mode, black in dark.
+ *  The viewer inverts ACI 7 (black/white) entities to match, so lines never vanish. */
+const bgRgb = () => (currentTheme === "dark" ? 0x000000 : 0xffffff);
+function bgSysVars() {
+  // Only PAPERBKCOLOR is safe as an open-time sysvar; MODELBKCOLOR at open
+  // time breaks layout resolution in cad-simple-viewer 1.7, so model space is
+  // tinted through the view setter right after the document opens.
+  // COLORTHEME (1 = light, 0 = dark) is what the UI plugin follows once a
+  // document is open, AutoCAD-style — without it the toolbar snaps back to dark.
+  return { lwdisplay: false, colortheme: currentTheme === "light" ? 1 : 0, paperbkcolor: layoutBackgroundColorFromRgb(bgRgb()) };
+}
+function applyViewBackground(): void {
+  const m = AcApDocManager.tryGetInstance();
+  try {
+    if (m?.curView) m.curView.backgroundColor = bgRgb();
+  } catch {
+    /* no document open */
+  }
+}
 let hostEl: HTMLElement | null = null;
 let containerEl: HTMLElement | null = null;
 
@@ -63,6 +88,7 @@ function workerUrls() {
 async function doInit(container: HTMLElement, host: HTMLElement, theme: "light" | "dark"): Promise<void> {
   hostEl = host;
   containerEl = container;
+  currentTheme = theme;
   const urls = workerUrls();
 
   // DWG is opt-in (GPL): register LibreDWG as the DWG converter.
@@ -75,6 +101,7 @@ async function doInit(container: HTMLElement, host: HTMLElement, theme: "light" 
     }),
   );
 
+  acedApplyUiTheme(theme);
   acedApplyUiTheme(theme, host);
 
   AcApDocManager.createInstance({
@@ -84,12 +111,15 @@ async function doInit(container: HTMLElement, host: HTMLElement, theme: "light" 
     baseUrl: FONT_BASE_URL,
     // Main-thread MTEXT layout uses less peak memory — the better trade on
     // phones and tablets; the worker only helps on very text-heavy sheets.
-    useMainThreadDraw: true,
+    useMainThreadDraw: isMobileUA,
+    // Fetch the fallback font chain now (while online) so the service worker
+    // has it cached before the first offline drawing.
+    preloadDefaultFonts: true,
     openDocumentDefaults: () => ({
       minimumChunkSize: 1000,
       mode: AcEdOpenMode.Read,
       progressiveRendering: false,
-      sysVars: { lwdisplay: false },
+      sysVars: bgSysVars(),
     }),
     webworkerFileUrls: urls,
   });
@@ -144,8 +174,9 @@ const api: Cad2dApi = {
         minimumChunkSize: 1000,
         mode: AcEdOpenMode.Read,
         progressiveRendering: false,
-        sysVars: { lwdisplay: false },
+        sysVars: bgSysVars(),
       });
+      if (ok) applyViewBackground();
       return ok ? { ok: true } : { ok: false, error: "The drawing could not be read." };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -163,7 +194,20 @@ const api: Cad2dApi = {
   },
 
   setTheme(theme) {
+    currentTheme = theme;
+    acedApplyUiTheme(theme);
     if (hostEl) acedApplyUiTheme(theme, hostEl);
+    // With a drawing open, the UI follows its COLORTHEME sysvar; set that too.
+    const db = AcApDocManager.tryGetInstance()?.curDocument?.database;
+    if (db) {
+      try {
+        AcDbSysVarManager.instance().setVar(AcDbSystemVariables.COLORTHEME, theme === "light" ? 1 : 0, db);
+      } catch (err) {
+        console.warn("[Datum 2D] COLORTHEME", err);
+      }
+    }
+    // Re-tint the open drawing too (this also re-inverts ACI 7 entities).
+    applyViewBackground();
   },
 
   snapshot() {

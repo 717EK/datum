@@ -97,7 +97,9 @@ function applyTheme(theme: Theme): void {
 }
 function currentTheme(): Theme {
   const t = localStorage.getItem(THEME_KEY);
-  return t === "light" || t === "dark" ? t : "auto";
+  // Light is the default look; "auto" (follow the OS) is an explicit choice.
+  if (t === "light" || t === "dark" || t === "auto") return t;
+  return "light";
 }
 
 function relativeTime(ts: number): string {
@@ -859,7 +861,7 @@ class WebApp {
 
     const themeCtl = row("Theme");
     const themeSel = themeCtl.createEl("select");
-    for (const [v, l] of [["auto", "System"], ["light", "Light"], ["dark", "Dark"]] as const) {
+    for (const [v, l] of [["light", "Light"], ["dark", "Dark"], ["auto", "Follow system"]] as const) {
       themeSel.createEl("option", { text: l, attr: { value: v } });
     }
     themeSel.value = currentTheme();
