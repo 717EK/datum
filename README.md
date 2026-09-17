@@ -344,6 +344,7 @@ exhausting the browser's limited context pool.
 
 ## License
 
-MIT (this plugin). `occt-import-js` / OpenCASCADE is **LGPL-2.1**; the bundled
-`occt-import-js.wasm` is distributed under that licence (see
-`node_modules/occt-import-js/dist/license.*.txt`).
+MIT for the code in this repository (this plugin and the Datum web additions).
+The **built Datum web app is GPL-3.0** because it bundles LibreDWG for `.dwg`
+reading; `occt-import-js` / OpenCASCADE is **LGPL-2.1**. Full breakdown, the
+GPL text and how to make an MIT-only (no-DWG) build: [LICENSES.md](./LICENSES.md).

@@ -75,10 +75,7 @@ active worker and one `step-viewer-<version>` cache.
 - mlightcad bundles import `three/examples/jsm/...` **without `.js`** →
   `threeExamplesPlugin` in esbuild.web.mjs appends it. `tsconfig.web.json`
   uses `moduleResolution: bundler` for their `/register` subpath export.
-- **Licensing**: DWG parsing = LibreDWG (GPL-3.0). Serving it in a web app is
-  distribution; either keep the app's source available (repo is private today)
-  or buy mlightcad's proprietary parser ($3k, `PROPRIETARY-PARSER.md` upstream).
-  DXF-only would be clean MIT. Vivek's call — flagged 2026-09-17.
+- **Licensing (decided 2026-09-17)**: personal use, repo **public/open source**. Repo code = MIT (LICENSE); the built web app = GPL-3.0 because of LibreDWG (LICENSE.GPL-3.0, LICENSES.md); the app links to the source from Settings. No proprietary parser needed.
 - Source files are CRLF: shell heredoc/sed patches break; use the Edit tool.
 - **Vercel blocks deploys whose commit author isn't a GitHub account it knows**
   (`COMMIT_AUTHOR_REQUIRED`, state BLOCKED, no build logs) once the project is

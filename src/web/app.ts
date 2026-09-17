@@ -32,6 +32,7 @@ declare const __BUILD_HASH__: string;
 export const APP_NAME = "Datum";
 const APP_TAGLINE = "Open STEP, STL, OBJ, FreeCAD and DWG / DXF files — on this device, nothing uploaded.";
 const COMPANY = "TAXI Design Studio";
+const SOURCE_URL = "https://github.com/717EK/datum";
 
 const SUPPORTED_3D = ["step", "stp", "stl", "obj", "fcstd"];
 const SUPPORTED_2D = ["dwg", "dxf"];
@@ -943,7 +944,9 @@ class WebApp {
     });
 
     const about = pop.createDiv({ cls: "sv-about sv-muted sv-tiny" });
-    about.setText(`${APP_NAME} by ${COMPANY} · 3D viewer core by Ondřej Uhnavý (MIT) · OpenCASCADE via occt-import-js · 2D DWG/DXF by mlightcad cad-viewer (MIT) + LibreDWG (GPL-3.0) · three.js`);
+    about.appendText(`${APP_NAME} by ${COMPANY} · open source (MIT; the web build with DWG support is GPL-3.0). `);
+    about.createEl("a", { text: "Source on GitHub", attr: { href: SOURCE_URL, target: "_blank", rel: "noopener" } });
+    about.appendText(" · 3D viewer core by Ondřej Uhnavý · OpenCASCADE via occt-import-js · 2D DWG/DXF by mlightcad cad-viewer + LibreDWG · three.js");
 
     const close = (e: PointerEvent) => {
       if (!pop.contains(e.target as Node) && e.target !== anchor && !anchor.contains(e.target as Node)) this.closeSettings();
