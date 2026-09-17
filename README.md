@@ -37,13 +37,21 @@ FreeCAD documents.
 
 ![4](assets/4.png)
 
-## Web app / PWA (install on phone, tablet or PC)
+## Datum — web app / PWA (install on phone, tablet or PC)
 
-The same viewer also ships as a standalone **installable web app** — no
-Obsidian needed. Open a `.step` / `.stp` / `.stl` / `.obj` / `.FCStd` file
-from your device; everything is parsed **locally in the browser** (OpenCASCADE
-compiled to WASM, in a Web Worker) and nothing is uploaded.
+The same viewer also ships as **Datum** by TAXI Design Studio: a standalone
+**installable web app** — no Obsidian needed. Open a `.step` / `.stp` / `.stl`
+/ `.obj` / `.FCStd` file from your device; everything is parsed **locally in
+the browser** (OpenCASCADE compiled to WASM, in a Web Worker) and nothing is
+uploaded.
 
+- **Welcome page** — app logo, a big open box (also a drop target) and a
+  *Recently opened* list with thumbnails; two columns on wide screens, one
+  centred column on phones. Recents reopen with one tap (via File System
+  Access handles on Chromium, or the stored bytes elsewhere, e.g. iOS).
+- **Touch & stylus** — orbit / two-finger pan / pinch-zoom; **long-press** a
+  part for its context menu, **double-tap** to frame it; while an Apple Pencil
+  or S Pen is in use, stray finger touches are ignored (palm rejection).
 - **Install** — in Chrome / Edge (desktop + Android) the header shows an
   *Install app* button that triggers the native prompt. On iOS Safari and other
   browsers it opens step-by-step instructions (Share → Add to Home Screen).
@@ -72,11 +80,10 @@ npm run build:web      # → dist/  (typechecks, then bundles + generates sw.js 
 npm run dev:web        # watch + serve dist/ at http://localhost:8787
 ```
 
-Deploy `dist/` to any static host over HTTPS. A GitHub Pages workflow is
-included (`.github/workflows/pages.yml`): enable *Pages → Source: GitHub
-Actions* in the repo settings and every push to `main` publishes a new build.
-All asset URLs are relative, so it works from a sub-path
-(`https://<user>.github.io/<repo>/`).
+Deploy `dist/` to any static host over HTTPS. `vercel.json` is included:
+import the repo at vercel.com/new (or run `npx vercel --prod`) and every push
+to `main` publishes a new build, which installed apps pick up as an update.
+All asset URLs are relative, so it also works from a sub-path.
 
 How it's wired: `src/web/app.ts` is the shell, `src/web/pwa.ts` handles
 install + update, and `src/web/obsidian-shim.ts` is a small browser stand-in
