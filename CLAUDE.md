@@ -80,6 +80,11 @@ active worker and one `step-viewer-<version>` cache.
   or buy mlightcad's proprietary parser ($3k, `PROPRIETARY-PARSER.md` upstream).
   DXF-only would be clean MIT. Vivek's call — flagged 2026-09-17.
 - Source files are CRLF: shell heredoc/sed patches break; use the Edit tool.
+- **Vercel blocks deploys whose commit author isn't a GitHub account it knows**
+  (`COMMIT_AUTHOR_REQUIRED`, state BLOCKED, no build logs) once the project is
+  Git-connected — that applies to CLI deploys too. This repo's git identity is
+  therefore `717EK <11254250+717EK@users.noreply.github.com>` (repo-local
+  config); commit as that or the deploy silently stalls.
 
 ## Next
 1. Deploy to Vercel (see State). Then test installed on Android Chrome,
