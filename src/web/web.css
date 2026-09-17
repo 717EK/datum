@@ -465,3 +465,15 @@ body.theme-light .sv-company { opacity: 0.7; }
   .sv-btn { padding: 8px; }
   .sv-btn-primary .sv-btn-label { display: none; }
 }
+
+/* ---------- 2D (DWG / DXF) viewer host ---------- */
+.sv-host-2d { position: absolute; inset: 0; overflow: hidden; background: var(--background-primary); }
+.sv-cad2d-ui { position: relative; width: 100% !important; height: 100% !important; min-height: 0; }
+.sv-cad2d-container { position: relative; flex: 1 1 auto; min-height: 0; width: 100%; height: 100%; }
+.sv-cad2d-container canvas { display: block; touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.sv-cad2d-overlay { position: absolute; inset: 0; z-index: 20; pointer-events: none; }
+.sv-cad2d-overlay .step-viewer-overlay { pointer-events: auto; }
+/* In 2D the library draws its UCS axes bottom-left: lift the company mark above them;
+   on phones its toolbar sits at the bottom, so park the mark top-left instead. */
+.sv-main.is-2d .sv-company { bottom: 108px; }
+body.is-mobile .sv-main.is-2d .sv-company { top: 10px; bottom: auto; left: 12px; }

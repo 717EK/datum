@@ -671,7 +671,9 @@ export class ViewerController {
     move.showX = false;
     move.showY = false;
     move.showZ = true; // only the along-normal arrow
-    this.scene.add(move);
+    // three r169+: TransformControls is no longer an Object3D; its visuals live
+    // in getHelper(), which is what goes into the scene.
+    this.scene.add(move.getHelper());
     this.sectionGizmo = move;
 
     // Tilt arcs (rotate). Local space so they follow the cut; only the two
@@ -686,7 +688,7 @@ export class ViewerController {
     rotate.showX = true;
     rotate.showY = true;
     rotate.showZ = false; // spinning about the normal doesn't change the cut
-    this.scene.add(rotate);
+    this.scene.add(rotate.getHelper());
     this.sectionRotateGizmo = rotate;
 
     // Suspend orbiting while either handle is dragged, and disable the other so
@@ -735,7 +737,7 @@ export class ViewerController {
     for (const g of [this.sectionGizmo, this.sectionRotateGizmo]) {
       if (!this.sectionProxy || !g) continue;
       g.enabled = on;
-      g.visible = on;
+      g.getHelper().visible = on;
       if (on) g.attach(this.sectionProxy);
       else g.detach();
     }
@@ -2278,8 +2280,8 @@ export class ViewerController {
     for (const g of [this.sectionGizmo, this.sectionRotateGizmo]) {
       if (!g) continue;
       g.detach();
+      this.scene.remove(g.getHelper());
       g.dispose();
-      this.scene.remove(g);
     }
     this.sectionGizmo = null;
     this.sectionRotateGizmo = null;

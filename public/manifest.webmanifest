@@ -1,7 +1,7 @@
 {
   "name": "Datum — CAD viewer by TAXI Design Studio",
   "short_name": "Datum",
-  "description": "Open STEP, STP, STL, OBJ and FreeCAD models in a 3D viewer. Files never leave your device.",
+  "description": "Open STEP, STP, STL, OBJ, FreeCAD and DWG / DXF files in a 2D/3D viewer. Files never leave your device.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
@@ -67,6 +67,12 @@
         ],
         "application/x-freecad": [
           ".fcstd"
+        ],
+        "image/vnd.dwg": [
+          ".dwg"
+        ],
+        "image/vnd.dxf": [
+          ".dxf"
         ]
       }
     }

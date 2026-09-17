@@ -67,6 +67,18 @@ const inlineWorkerPlugin = {
   },
 };
 
+// mlightcad's prebuilt bundles import `three/examples/jsm/...` without the
+// `.js` suffix (Vite tolerates that; three's exports map + esbuild don't).
+const threeExamplesPlugin = {
+  name: "three-examples-ext",
+  setup(build) {
+    build.onResolve({ filter: /^three\/examples\/jsm\// }, (a) => {
+      if (a.path.endsWith(".js") || a.pluginData?.threeExt) return undefined;
+      return build.resolve(`${a.path}.js`, { kind: a.kind, resolveDir: a.resolveDir, importer: a.importer, pluginData: { threeExt: true } });
+    });
+  },
+};
+
 // --- Static shell + service worker -----------------------------------------
 function walk(dir, base = dir) {
   const out = [];
@@ -84,7 +96,27 @@ function hashOf(...bufs) {
   return h.digest("hex").slice(0, 10);
 }
 
+// Web-worker assets for the 2D (DWG/DXF) viewer: the MTEXT layout worker from
+// cad-simple-viewer and LibreDWG's parser worker + wasm. They are large (the
+// wasm alone is ~10 MB), so the service worker fetches them lazily into a
+// separate, content-keyed cache instead of the blocking app-shell precache.
+const WORKER_ASSETS = [
+  ["@mlightcad/cad-simple-viewer/dist/mtext-renderer-worker.js", "mtext-renderer-worker.js"],
+  ["@mlightcad/libredwg-converter/dist/libredwg-parser-worker.js", "libredwg-parser-worker.js"],
+  ["@mlightcad/libredwg-converter/dist/libredwg-web.wasm", "libredwg-web.wasm"],
+];
+function copyWorkerAssets() {
+  const out = path.join(dist, "workers");
+  mkdirSync(out, { recursive: true });
+  for (const [from, to] of WORKER_ASSETS) {
+    const src = path.join(here, "node_modules", from);
+    if (!existsSync(src)) throw new Error(`missing worker asset: ${from}`);
+    cpSync(src, path.join(out, to));
+  }
+}
+
 function finalize() {
+  copyWorkerAssets();
   // Icons (regenerate if missing).
   const iconDir = path.join(pub, "icons");
   if (!existsSync(path.join(iconDir, "icon-512.png"))) {
@@ -100,8 +132,13 @@ function finalize() {
 
   // Content hash over everything that ships, so any change = a new SW.
   const appJs = readFileSync(path.join(dist, "app.js"));
-  const files = walk(dist).filter((f) => f !== "sw.js" && f !== "index.html" && f !== "version.json");
-  const hash = hashOf(appJs, css, readFileSync(path.join(pub, "index.html")), ...files.map((f) => readFileSync(path.join(dist, f))));
+  const all = walk(dist).filter((f) => f !== "sw.js" && f !== "index.html" && f !== "version.json");
+  // The big 2D bundle + worker assets go on the lazy list, each keyed by its
+  // own content hash so an unchanged wasm survives an app update in the cache.
+  const isLazy = (f) => f === "cad2d.js" || f.startsWith("workers/");
+  const files = all.filter((f) => !isLazy(f));
+  const lazy = all.filter(isLazy).map((f) => `${f}?v=${hashOf(readFileSync(path.join(dist, f)))}`);
+  const hash = hashOf(appJs, css, readFileSync(path.join(pub, "index.html")), ...files.map((f) => readFileSync(path.join(dist, f))), lazy.join("|"));
   const version = `${pkg.version}+${hash}`;
 
   // index.html with cache-busting query strings.
@@ -112,13 +149,17 @@ function finalize() {
   const precache = ["./", "index.html", ...files.map((f) => (f === "app.js" || f === "styles.css" ? `${f}?v=${hash}` : f))];
   const sw = readFileSync(path.join(pub, "sw.template.js"), "utf8")
     .replace("__VERSION__", version)
-    .replace("__PRECACHE__", JSON.stringify(precache, null, 2));
+    .replace("__PRECACHE__", JSON.stringify(precache, null, 2))
+    .replace("__LAZY__", JSON.stringify(lazy, null, 2));
   writeFileSync(path.join(dist, "sw.js"), sw);
 
   // version.json for external tooling / a quick sanity check on the server.
   writeFileSync(path.join(dist, "version.json"), JSON.stringify({ version: pkg.version, build: hash, builtAt: new Date().toISOString() }, null, 2));
 
-  console.log(`[web] built v${version} → dist/ (app.js ${(appJs.length / 1024 / 1024).toFixed(2)} MB)`);
+  const cad2d = readFileSync(path.join(dist, "cad2d.js")).length;
+  console.log(
+    `[web] built v${version} → dist/ (app.js ${(appJs.length / 1024 / 1024).toFixed(2)} MB, cad2d.js ${(cad2d / 1024 / 1024).toFixed(2)} MB)`,
+  );
 }
 
 // Git short SHA when available (stable across rebuilds of the same commit, so a
@@ -146,19 +187,22 @@ const finalizePlugin = {
 };
 
 const ctx = await esbuild.context({
-  entryPoints: ["src/web/app.ts"],
+  // app.js = the shell + 3D viewer; cad2d.js = the DWG/DXF viewer, loaded on
+  // demand by app.ts the first time a drawing is opened.
+  entryPoints: ["src/web/app.ts", "src/web/cad2d.ts"],
   bundle: true,
   format: "iife",
   platform: "browser",
   target: ["es2020", "safari15"],
-  outfile: "dist/app.js",
+  outdir: "dist",
+  entryNames: "[name]",
   alias: { obsidian: shim },
   external,
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
     __BUILD_HASH__: JSON.stringify(buildStamp()),
   },
-  plugins: [wasmGzipPlugin, inlineWorkerPlugin, finalizePlugin],
+  plugins: [threeExamplesPlugin, wasmGzipPlugin, inlineWorkerPlugin, finalizePlugin],
   minify: prod,
   sourcemap: prod ? false : "inline",
   treeShaking: true,

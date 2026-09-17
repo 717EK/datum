@@ -30,11 +30,22 @@ declare const __APP_VERSION__: string;
 declare const __BUILD_HASH__: string;
 
 export const APP_NAME = "Datum";
-const APP_TAGLINE = "Open STEP, STL, OBJ and FreeCAD models — on this device, nothing uploaded.";
+const APP_TAGLINE = "Open STEP, STL, OBJ, FreeCAD and DWG / DXF files — on this device, nothing uploaded.";
 const COMPANY = "TAXI Design Studio";
 
-const SUPPORTED = ["step", "stp", "stl", "obj", "fcstd"];
-const ACCEPT = ".step,.stp,.stl,.obj,.fcstd,model/step,model/stl,application/sla,model/obj";
+const SUPPORTED_3D = ["step", "stp", "stl", "obj", "fcstd"];
+const SUPPORTED_2D = ["dwg", "dxf"];
+const SUPPORTED = [...SUPPORTED_3D, ...SUPPORTED_2D];
+const ACCEPT = ".step,.stp,.stl,.obj,.fcstd,.dwg,.dxf,model/step,model/stl,application/sla,model/obj,image/vnd.dwg,image/vnd.dxf";
+// The 2D (DWG/DXF) viewer is a separate bundle, loaded the first time it's needed.
+const CAD2D_SCRIPT = "./cad2d.js";
+
+import type { Cad2dApi } from "./cad2d";
+declare global {
+  interface Window {
+    DatumCad2d?: Cad2dApi;
+  }
+}
 const SETTINGS_KEY = "step-viewer:settings";
 const THEME_KEY = "step-viewer:theme";
 
@@ -115,6 +126,14 @@ class WebApp {
   private root: HTMLElement;
   private titleEl!: HTMLElement;
   private host!: HTMLElement;
+  private main!: HTMLElement;
+  /** Persistent host for the 2D viewer (its canvas is created once and reused). */
+  private host2d!: HTMLElement;
+  private host2dUi!: HTMLElement;
+  private host2dContainer!: HTMLElement;
+  private host2dOverlay!: HTMLElement;
+  private cad2d: Promise<Cad2dApi> | null = null;
+  private mode: "3d" | "2d" | null = null;
   private welcome!: HTMLElement;
   private recentsEl!: HTMLElement;
   private installBtn!: HTMLElement;
@@ -131,7 +150,7 @@ class WebApp {
     document.body.classList.toggle("is-mobile", Platform.isMobile);
     document.body.classList.toggle("is-phone", Platform.isPhone);
     applyTheme(currentTheme());
-    darkQuery.addEventListener("change", () => applyTheme(currentTheme()));
+    darkQuery.addEventListener("change", () => this.applyThemeEverywhere(currentTheme()));
     this.buildShell();
     this.wireFileSources();
     void this.renderRecents();
@@ -196,9 +215,16 @@ class WebApp {
     });
 
     // Viewer area, welcome page, and the company mark that is always in view.
-    const main = r.createDiv({ cls: "sv-main" });
+    const main = (this.main = r.createDiv({ cls: "sv-main" }));
     this.host = main.createDiv({ cls: "step-viewer-host sv-host" });
     this.host.hide();
+    this.host2d = main.createDiv({ cls: "sv-host sv-host-2d" });
+    // The library styles its UI host (position/display), so it gets an inner
+    // wrapper with an explicit size rather than our absolutely-positioned host.
+    this.host2dUi = this.host2d.createDiv({ cls: "sv-cad2d-ui" });
+    this.host2dContainer = this.host2dUi.createDiv({ cls: "sv-cad2d-container" });
+    this.host2dOverlay = this.host2d.createDiv({ cls: "sv-cad2d-overlay" });
+    this.host2d.hide();
     this.welcome = main.createDiv({ cls: "sv-welcome" });
     this.buildWelcome();
     const mark = main.createDiv({ cls: "sv-company" });
@@ -236,7 +262,7 @@ class WebApp {
       text: Platform.isMobile ? "Tap to choose a file from this device" : "Click to choose, or drop a file here",
     });
     const fmts = box.createDiv({ cls: "sv-formats" });
-    for (const f of ["STEP", "STP", "STL", "OBJ", "FCStd"]) fmts.createSpan({ cls: "sv-chip", text: f });
+    for (const f of ["STEP", "STP", "STL", "OBJ", "FCStd", "DWG", "DXF"]) fmts.createSpan({ cls: "sv-chip", text: f });
     box.addEventListener("click", () => void this.pickFile());
 
     left.createDiv({ cls: "sv-muted sv-tiny sv-version", text: `v${__APP_VERSION__} · ${__BUILD_HASH__}` });
@@ -305,6 +331,11 @@ class WebApp {
     document.title = name ? `${name} – ${APP_NAME}` : `${APP_NAME} · ${COMPANY}`;
   }
 
+  private applyThemeEverywhere(theme: Theme): void {
+    applyTheme(theme);
+    window.DatumCad2d?.setTheme(document.body.classList.contains("theme-dark") ? "dark" : "light");
+  }
+
   /** Back to the welcome page (keeps the parsed model cache; drops the scene). */
   private goHome(): void {
     this.loadToken++;
@@ -312,9 +343,91 @@ class WebApp {
     this.currentFile = null;
     this.currentEntry = null;
     this.host.hide();
+    this.host2d.hide();
+    this.main.removeClass("is-2d");
+    this.mode = null;
     this.welcome.show();
     this.setTitle(null);
     void this.renderRecents();
+  }
+
+  // --- 2D (DWG / DXF) ----------------------------------------------------
+
+  /** Load the 2D bundle once (a plain <script>, so app.js stays an IIFE). */
+  private loadCad2d(): Promise<Cad2dApi> {
+    if (this.cad2d) return this.cad2d;
+    this.cad2d = new Promise<Cad2dApi>((resolve, reject) => {
+      if (window.DatumCad2d) return resolve(window.DatumCad2d);
+      const s = document.createElement("script");
+      s.src = CAD2D_SCRIPT;
+      s.async = true;
+      s.onload = () => (window.DatumCad2d ? resolve(window.DatumCad2d) : reject(new Error("2D viewer failed to initialise")));
+      s.onerror = () => reject(new Error("Could not load the 2D viewer (offline and not cached yet?)"));
+      document.head.appendChild(s);
+    }).catch((err) => {
+      this.cad2d = null;
+      throw err;
+    });
+    return this.cad2d;
+  }
+
+  private overlay2d(cls: string, title: string, sub?: string): HTMLElement {
+    const o = this.host2dOverlay;
+    o.empty();
+    o.show();
+    const el = o.createDiv({ cls: `step-viewer-overlay ${cls}` });
+    if (cls === "step-viewer-loading") el.createDiv({ cls: "step-viewer-spinner" });
+    el.createEl("div", { text: title, cls: "step-viewer-message" });
+    if (sub) el.createEl("div", { text: sub, cls: "step-viewer-message-sub" });
+    return el;
+  }
+
+  private async open2d(file: File, token: number): Promise<void> {
+    this.overlay2d("step-viewer-loading", `Loading ${file.name}…`, formatFileSize(file.size));
+    try {
+      const api = await this.loadCad2d();
+      if (token !== this.loadToken) return;
+      const dark = document.body.classList.contains("theme-dark");
+      await api.init(this.host2dContainer, this.host2dUi, dark ? "dark" : "light");
+      if (token !== this.loadToken) return;
+      const bytes = await file.arrayBuffer();
+      if (token !== this.loadToken) return;
+      const res = await api.open(file.name, bytes);
+      if (token !== this.loadToken) return;
+      if (!res.ok) {
+        this.overlay2d("step-viewer-error", `Could not open "${file.name}".`, res.error);
+        return;
+      }
+      this.host2dOverlay.hide();
+      this.host2dOverlay.empty();
+      // Thumbnail for the recents list once the first frame is up.
+      window.setTimeout(() => {
+        if (token !== this.loadToken) return;
+        const url = api.snapshot();
+        if (url) this.storeThumb(file, url);
+      }, 1200);
+    } catch (err) {
+      if (token !== this.loadToken) return;
+      console.error("[Datum 2D] open failed", err);
+      this.overlay2d("step-viewer-error", `Could not open "${file.name}".`, err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** Downscale a captured frame to ~192px and save it with the recents entry. */
+  private storeThumb(file: File, url: string): void {
+    const img = new Image();
+    img.onload = () => {
+      const W = 192;
+      const H = Math.max(1, Math.round((img.height / img.width) * W));
+      const c = document.createElement("canvas");
+      c.width = W;
+      c.height = H;
+      const ctx = c.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0, W, H);
+      void this.recents.setThumb(entryId(file), c.toDataURL("image/png"));
+    };
+    img.src = url;
   }
 
   // --- File sources ------------------------------------------------------
@@ -328,7 +441,14 @@ class WebApp {
           types: [
             {
               description: "CAD models",
-              accept: { "model/step": [".step", ".stp"], "model/stl": [".stl"], "model/obj": [".obj"], "application/x-freecad": [".fcstd"] },
+              accept: {
+                "model/step": [".step", ".stp"],
+                "model/stl": [".stl"],
+                "model/obj": [".obj"],
+                "application/x-freecad": [".fcstd"],
+                "image/vnd.dwg": [".dwg"],
+                "image/vnd.dxf": [".dxf"],
+              },
             },
           ],
         });
@@ -402,12 +522,14 @@ class WebApp {
     this.viewer?.dispose();
     this.viewer = null;
     this.host.empty();
+    // Release the current drawing's geometry; the 2D manager itself stays.
+    if (this.mode === "2d" && window.DatumCad2d) void window.DatumCad2d.close();
   }
 
   async openFile(file: File, handle?: FileSystemFileHandle): Promise<void> {
     const ext = (file.name.split(".").pop() ?? "").toLowerCase();
     if (!SUPPORTED.includes(ext)) {
-      new Notice(`Unsupported file type ".${ext}". Open a STEP, STP, STL, OBJ or FCStd file.`);
+      new Notice(`Unsupported file type ".${ext}". Open a STEP, STP, STL, OBJ, FCStd, DWG or DXF file.`);
       return;
     }
     const token = ++this.loadToken;
@@ -416,10 +538,28 @@ class WebApp {
     this.closeSettings();
     this.welcome.hide();
     this.setTitle(file.name);
-    this.host.show();
     void this.recents.remember(file, handle).then((e) => {
       if (token === this.loadToken) this.currentEntry = e;
     });
+
+    const is2d = SUPPORTED_2D.includes(ext);
+    this.mode = is2d ? "2d" : "3d";
+    this.host.toggle(!is2d);
+    this.host2d.toggle(is2d);
+    this.main.toggleClass("is-2d", is2d);
+
+    if (is2d) {
+      if (shouldWarnLargeModel(file.size)) {
+        const el = this.overlay2d("step-viewer-empty", "Large drawing", `This file is ${formatFileSize(file.size)}. On mobile, opening large drawings can run the viewer out of memory. Open anyway?`);
+        const btn = el.createEl("button", { text: "Open anyway", cls: "mod-cta" });
+        btn.addEventListener("click", () => {
+          if (token === this.loadToken) void this.open2d(file, token);
+        });
+        return;
+      }
+      await this.open2d(file, token);
+      return;
+    }
 
     if (shouldWarnLargeModel(file.size)) {
       this.showLargeWarning(file.size, () => {
@@ -724,7 +864,7 @@ class WebApp {
     themeSel.value = currentTheme();
     themeSel.addEventListener("change", () => {
       localStorage.setItem(THEME_KEY, themeSel.value);
-      applyTheme(themeSel.value as Theme);
+      this.applyThemeEverywhere(themeSel.value as Theme);
     });
 
     const profCtl = row("Mesh quality", "Applies the next time a model is opened.");
@@ -803,7 +943,7 @@ class WebApp {
     });
 
     const about = pop.createDiv({ cls: "sv-about sv-muted sv-tiny" });
-    about.setText(`${APP_NAME} by ${COMPANY} · viewer core by Ondřej Uhnavý (MIT) · OpenCASCADE via occt-import-js · three.js`);
+    about.setText(`${APP_NAME} by ${COMPANY} · 3D viewer core by Ondřej Uhnavý (MIT) · OpenCASCADE via occt-import-js · 2D DWG/DXF by mlightcad cad-viewer (MIT) + LibreDWG (GPL-3.0) · three.js`);
 
     const close = (e: PointerEvent) => {
       if (!pop.contains(e.target as Node) && e.target !== anchor && !anchor.contains(e.target as Node)) this.closeSettings();

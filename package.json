@@ -25,7 +25,7 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.11.0",
-    "@types/three": "^0.160.0",
+    "@types/three": "^0.172.0",
     "esbuild": "^0.20.0",
     "lucide": "^1.46.0",
     "obsidian": "latest",
@@ -33,9 +33,13 @@
     "typescript": "^5.4.0"
   },
   "dependencies": {
+    "@mlightcad/cad-simple-ui-plugin": "^1.7.0",
+    "@mlightcad/cad-simple-viewer": "^1.7.0",
+    "@mlightcad/data-model": "^1.14.7",
+    "@mlightcad/libredwg-converter": "^3.14.7",
     "fflate": "^0.8.3",
     "occt-import-js": "0.0.23",
-    "three": "^0.160.0"
+    "three": "^0.172.0"
   },
   "allowScripts": {
     "esbuild@0.20.2": true

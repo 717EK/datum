@@ -45,6 +45,14 @@ The same viewer also ships as **Datum** by TAXI Design Studio: a standalone
 the browser** (OpenCASCADE compiled to WASM, in a Web Worker) and nothing is
 uploaded.
 
+- **DWG / DXF drawings** — 2D files open in a second viewer built on
+  [mlightcad/cad-viewer](https://github.com/mlightcad/cad-viewer)
+  (`@mlightcad/cad-simple-viewer`, MIT): pan / zoom / layers / measure /
+  markups, with its own phone and tablet layouts and touch gestures. DXF is
+  parsed by the MIT converter; **DWG uses LibreDWG compiled to WASM, which is
+  GPL-3.0** (`@mlightcad/libredwg-converter`). The 2D bundle (`cad2d.js`) and
+  its workers load on first use and are then cached for offline use; text
+  fonts come from mlightcad's `cad-data` CDN and are cached as they're used.
 - **Welcome page** — app logo, a big open box (also a drop target) and a
   *Recently opened* list with thumbnails; two columns on wide screens, one
   centred column on phones. Recents reopen with one tap (via File System

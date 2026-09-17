@@ -14,10 +14,18 @@ tablet and PC. Git: `origin` = https://github.com/717EK/datum (private, main);
   OBJ export download, SW install without spurious reload, "Update available"
   modal → one reload → old cache purged, offline reload; **touch**: long-press
   → context menu, double-tap → frame part + tree opens.
-- **Vercel: NOT yet deployed** — no Vercel auth on this PC. `vercel.json` is
-  ready. Either `npx vercel login` then `npx vercel --prod` (project `datum`),
-  or import the GitHub repo at vercel.com/new (vercel.json makes it build).
-- Not yet tested on a real phone / iPad (needs the HTTPS deploy).
+- **LIVE at https://datum-viewer.vercel.app** (Vercel project `datum`, account
+  `717ek`, CLI logged in on this PC; GitHub repo connected → pushes to `main`
+  auto-deploy; `npx vercel --prod` also works).
+- **DWG / DXF (2D) added 2026-09-17 (late)**: `src/web/cad2d.ts` → separate
+  bundle `dist/cad2d.js` (4.1 MB) on mlightcad `cad-simple-viewer` 1.7.0 +
+  `cad-simple-ui-plugin` (toolbar with phone/pad/desktop layouts, touch built
+  in) + `libredwg-converter` 3.14.7 (DWG, **GPL-3.0**, 10 MB wasm). Verified
+  headless: DXF + two DWGs open in ~3 s, 2D↔3D switching, recents thumbnails
+  for drawings, offline DWG open from the lazy asset cache. Whole project moved
+  to **three 0.172** (their peer dep); the only 3D-core change was
+  `TransformControls` → `getHelper()` (r169 API) for the section gizmos.
+- Not yet tested on a real phone / iPad.
 - The Obsidian plugin build (`npm run build` → `main.js`) still passes;
   `tsconfig.json` excludes `src/web/**`.
 
@@ -27,6 +35,8 @@ tablet and PC. Git: `origin` = https://github.com/717EK/datum (private, main);
 | `src/web/obsidian-shim.ts` | Browser stand-in for the `obsidian` module: DOM prototype helpers (`createDiv`, `toggle`, `isShown`…), `setIcon` (Lucide), `Notice`, `Menu`, `MarkdownRenderer` (small safe subset), `Plugin` (localStorage `loadData/saveData`), `app.vault.create/createBinary` → browser download, `openLinkText` → new tab. |
 | `src/web/icons.ts` | The Lucide icons referenced by id. **If the viewer starts using a new icon id, add it here** — unknown ids log a warning and render blank. |
 | `src/web/app.ts` | Shell: header (Datum brand → home, Open / Update / Install / Settings), welcome page (hero + big open box + recents), company wordmark bottom-left (CSS mask of `public/brand/tds-wordmark.svg`, tinted via `--sv-brand`), `showOpenFilePicker` with `<input>` fallback, drag-drop (+handles), `launchQueue` ("Open with"), Ctrl+O, load pipeline ported from `src/view/StepView.ts`, thumbnail capture after mount, settings popover, modals. |
+| `src/web/cad2d.ts` | 2D viewer module → `dist/cad2d.js`, loaded by app.ts via `<script>` on first DWG/DXF; exposes `window.DatumCad2d` (`init / open / close / setTheme / snapshot`). Registers LibreDWG for DWG, fonts from `cdn.jsdelivr.net/gh/mlightcad/cad-data` (SW caches them), UI plugin with `excludeItems: export/locale/theme`. The plugin restyles its host → app.ts hands it the inner `.sv-cad2d-ui` wrapper (explicit 100% size), never the absolute host. |
+| `public/sw.template.js` | Two caches: versioned shell precache + long-lived `step-viewer-assets` for `cad2d.js`, `workers/*` (keyed by `?v=<own hash>`, refreshed in the background on activate, purged when the hash changes) and the cad-data fonts. |
 | `src/web/recents.ts` | Recently-opened store (IndexedDB `step-viewer-recents`): FileSystemFileHandle on Chromium, else the file bytes (≤64 MB each, ≤256 MB total, LRU), 12 entries, 192px thumbnail. `reopen()` must be called from a user gesture (handle permission). |
 | `src/viewer/ViewerController.ts` | **Only viewer-core file touched**: `LONG_PRESS_MS` / `DOUBLE_TAP_*` / `PEN_GRACE_MS`; `onPalmGuard` (capture-phase on host, drops touch while a pen is down); long-press → `openContextMenu`; double-tap → `onDoubleClick` (native dblclick right after is ignored). |
 | `src/web/pwa.ts` | SW registration (`updateViaCache: "none"`), install modes `installed / prompt / manual / unavailable`, update detection (`updatefound` + `reg.waiting`), periodic checks (hourly, focus, visibility, online), `SKIP_WAITING` → one reload (only if a controller existed or an update was requested). |
@@ -62,6 +72,14 @@ active worker and one `step-viewer-<version>` cache.
   emulation doesn't flip it. `body.is-mobile` scales the cube/buttons.
 - npm 11.16 on this PC gates postinstall scripts (`npm approve-scripts esbuild`
   or `node node_modules/esbuild/install.js`) — CI on Node 22 doesn't.
+- mlightcad bundles import `three/examples/jsm/...` **without `.js`** →
+  `threeExamplesPlugin` in esbuild.web.mjs appends it. `tsconfig.web.json`
+  uses `moduleResolution: bundler` for their `/register` subpath export.
+- **Licensing**: DWG parsing = LibreDWG (GPL-3.0). Serving it in a web app is
+  distribution; either keep the app's source available (repo is private today)
+  or buy mlightcad's proprietary parser ($3k, `PROPRIETARY-PARSER.md` upstream).
+  DXF-only would be clean MIT. Vivek's call — flagged 2026-09-17.
+- Source files are CRLF: shell heredoc/sed patches break; use the Edit tool.
 
 ## Next
 1. Deploy to Vercel (see State). Then test installed on Android Chrome,
