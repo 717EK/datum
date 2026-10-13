@@ -36,16 +36,24 @@ self.addEventListener("install", (event) => {
   // asks; it sends SKIP_WAITING when the user accepts.
 });
 
-/** Fetch the lazy assets in the background; drop stale versions. */
-async function refreshLazyAssets() {
+/**
+ * Bring the lazy assets up to date in the background: a changed one is
+ * re-fetched only if this device had it before (a phone that never opened the
+ * desktop CAD interface doesn't download its 28 MB wasm). `all` fetches
+ * everything (PREFETCH_ASSETS, e.g. "make it work offline").
+ */
+async function refreshLazyAssets(all = false) {
   const cache = await caches.open(ASSETS);
   const wanted = new Map(LAZY.map((p) => [stripQuery(toUrl(p)), toUrl(p)]));
+  const had = new Set();
   // Purge entries whose path is ours but whose ?v= no longer matches.
   for (const req of await cache.keys()) {
     const bare = stripQuery(req.url);
+    if (wanted.has(bare)) had.add(bare);
     if (wanted.has(bare) && wanted.get(bare) !== req.url) await cache.delete(req);
   }
-  for (const [, url] of wanted) {
+  for (const [bare, url] of wanted) {
+    if (!all && !had.has(bare)) continue;
     if (await cache.match(url)) continue;
     try {
       const res = await fetch(new Request(url, { cache: "reload" }));
@@ -71,7 +79,7 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
   if (event.data && event.data.type === "GET_VERSION") event.source?.postMessage({ type: "VERSION", version: VERSION });
-  if (event.data && event.data.type === "PREFETCH_ASSETS") event.waitUntil?.(refreshLazyAssets());
+  if (event.data && event.data.type === "PREFETCH_ASSETS") event.waitUntil?.(refreshLazyAssets(true));
 });
 
 /** Cache-first against the assets cache, ignoring ?v= on lookup. */
@@ -109,6 +117,15 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (url.origin !== location.origin) return;
+  const rel = url.pathname.startsWith(scopeUrl.pathname) ? url.pathname.slice(scopeUrl.pathname.length) : null;
+
+  // Shared modules (the CAD interface frame, its wasm and fonts): long-lived
+  // asset cache. Checked before navigations — the CAD frame's page load is a
+  // navigation too, and must not get the app shell.
+  if (rel !== null && rel.startsWith("modules/")) {
+    event.respondWith(assetResponse(req));
+    return;
+  }
 
   // App shell for navigations (works offline, and file-handler launches).
   if (req.mode === "navigate") {
@@ -127,7 +144,6 @@ self.addEventListener("fetch", (event) => {
   }
 
   // Lazy 2D assets (cad2d.js, workers/*).
-  const rel = url.pathname.startsWith(scopeUrl.pathname) ? url.pathname.slice(scopeUrl.pathname.length) : null;
   if (rel !== null && (rel === "cad2d.js" || rel.startsWith("workers/"))) {
     event.respondWith(assetResponse(req));
     return;

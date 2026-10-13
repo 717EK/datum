@@ -1,0 +1,9 @@
+{
+  "name": "cad-desktop",
+  "version": "0.1.1",
+  "kind": "built",
+  "description": "Full desktop CAD interface (DWG/DXF) as an embeddable WebAssembly app",
+  "build": "node tools/build-taxicad.mjs desktop",
+  "output": "../taxicad/out/cad-desktop",
+  "license": "MIT (upstream engine, see taxicad/licenses); DWG via acadrust, MPL-2.0 (unmodified)"
+}

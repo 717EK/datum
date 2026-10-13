@@ -1,0 +1,7 @@
+{
+  "name": "cad-host",
+  "version": "0.1.0",
+  "kind": "source",
+  "description": "Embed cad-desktop in any page: open drawings, receive saves, dirty state — as promises",
+  "needs": ["cad-desktop", "cad-fonts"]
+}

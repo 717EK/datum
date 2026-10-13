@@ -303,6 +303,21 @@ body.is-mobile .step-viewer-tree-row, body.is-mobile .step-viewer-annots-row { m
   mask: url(./brand/tds-wordmark.svg) no-repeat left center / contain;
 }
 body.theme-light .sv-company { opacity: 0.7; }
+/* Full CAD interface: its own toolbar owns the top-left corner, so the mark
+   moves into the header (right of the file name) instead of covering icons. */
+body.is-cad .sv-main > .sv-company { display: none; }
+.sv-header-mark {
+  display: none;
+  flex: 0 0 auto;
+  width: 84px;
+  height: 24px;
+  opacity: 0.7;
+  background-color: var(--sv-brand);
+  -webkit-mask: url(./brand/tds-wordmark.svg) no-repeat center / contain;
+  mask: url(./brand/tds-wordmark.svg) no-repeat center / contain;
+}
+body.is-cad .sv-header-mark { display: block; }
+.sv-host-cad { overflow: hidden; background: #22282f; }
 
 /* ---------- Welcome page ---------- */
 .sv-welcome {

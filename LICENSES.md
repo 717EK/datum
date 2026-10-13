@@ -24,6 +24,9 @@ in `src/web/cad2d.ts`. DXF, STEP, STL, OBJ and FCStd remain fully supported.
 
 | Component | Licence | Used for |
 |---|---|---|
+| Drawing engine + desktop CAD interface (`modules/cad-desktop`, built from TAXI's module library) — derived from an open-source Rust CAD engine | MIT (or Apache-2.0) — full notice and every bundled crate in [`modules/cad-desktop/THIRD-PARTY-NOTICES.txt`](./modules/cad-desktop/THIRD-PARTY-NOTICES.txt), also served at `/modules/cad-desktop/THIRD-PARTY-NOTICES.txt` | DWG / DXF opening, editing and saving on desktop |
+| [acadrust](https://github.com/hakanaktt/acadrust) (unmodified) | MPL-2.0 | DWG reading and writing inside the drawing engine |
+| [Liberation Fonts](https://github.com/liberationfonts/liberation-fonts) 2.1.5 (`modules/cad-fonts`) | SIL OFL 1.1 | Text in drawings (in place of Arial / Times / Courier) |
 | [occt-import-js](https://github.com/kovacsv/occt-import-js) (OpenCASCADE → WASM) | LGPL-2.1 | STEP / BREP parsing |
 | [three.js](https://threejs.org/) | MIT | 3D and 2D rendering |
 | [@mlightcad/cad-simple-viewer](https://github.com/mlightcad/cad-viewer), cad-simple-ui-plugin, data-model, three-renderer, mtext-renderer | MIT | DWG/DXF viewer, DXF parsing, 2D toolbar |

@@ -1,0 +1,12 @@
+{
+  "comment": "Each file is registered with the CAD engine under every name in `names` (the font file a drawing's text style asks for, without extension). Liberation fonts are metric-compatible with Arial, Times New Roman and Courier New, so text keeps its width.",
+  "fonts": [
+    { "file": "fonts/LiberationSans-Regular.ttf", "names": ["arial", "liberationsans-regular", "helvetica", "swiss"] },
+    { "file": "fonts/LiberationSans-Bold.ttf", "names": ["arialbd", "arial bold", "liberationsans-bold"] },
+    { "file": "fonts/LiberationSans-Italic.ttf", "names": ["ariali", "arial italic", "liberationsans-italic"] },
+    { "file": "fonts/LiberationSans-BoldItalic.ttf", "names": ["arialbi", "arial bold italic", "liberationsans-bolditalic"] },
+    { "file": "fonts/LiberationSerif-Regular.ttf", "names": ["times", "times new roman", "liberationserif-regular"] },
+    { "file": "fonts/LiberationSerif-Bold.ttf", "names": ["timesbd", "times new roman bold", "liberationserif-bold"] },
+    { "file": "fonts/LiberationMono-Regular.ttf", "names": ["cour", "courier new", "courier", "liberationmono-regular"] }
+  ]
+}

@@ -26,6 +26,7 @@ import { StepViewerSettings, DEFAULT_SETTINGS } from "../settings";
 import { initPwa, InstallMode, PwaHandle } from "./pwa";
 import { RecentsStore, RecentEntry, entryId } from "./recents";
 import { LENGTH_UNITS, LengthUnit, setLengthUnit } from "../viewer/units";
+import { mountCadDesktop, type CadDesktop } from "../../modules/cad-host/src/index";
 import * as THREE from "three";
 
 declare const __APP_VERSION__: string;
@@ -49,6 +50,17 @@ declare global {
     DatumCad2d?: Cad2dApi;
   }
 }
+/** The full desktop CAD interface (module cad-desktop) and its drawing fonts (cad-fonts). */
+const CAD_DESKTOP_BASE = "modules/cad-desktop/";
+const CAD_FONTS_BASE = "modules/cad-fonts/";
+/** Which interface DWG/DXF opens in: "auto" = full CAD on desktop, the touch viewer on phones/tablets. */
+type CadInterface = "auto" | "desktop" | "touch";
+const CAD_UI_KEY = "datum:cad-interface";
+function loadCadInterface(): CadInterface {
+  const v = localStorage.getItem(CAD_UI_KEY);
+  return v === "desktop" || v === "touch" ? v : "auto";
+}
+
 const SETTINGS_KEY = "step-viewer:settings";
 const THEME_KEY = "step-viewer:theme";
 const UNITS_KEY = "step-viewer:units";
@@ -163,7 +175,14 @@ class WebApp {
   private host2dContainer!: HTMLElement;
   private host2dOverlay!: HTMLElement;
   private cad2d: Promise<Cad2dApi> | null = null;
-  private mode: "3d" | "2d" | null = null;
+  /** Full desktop CAD interface: one frame for the session, drawings open as its tabs. */
+  private hostCad!: HTMLElement;
+  private hostCadOverlay!: HTMLElement;
+  private cadDesktop: CadDesktop | null = null;
+  /** Drawing name → the file it came from, so Save writes back where the browser allows. */
+  private cadHandles = new Map<string, FileSystemFileHandle>();
+  private cadInterface: CadInterface = loadCadInterface();
+  private mode: "3d" | "2d" | "cad" | null = null;
   private welcome!: HTMLElement;
   private recentsEl!: HTMLElement;
   private installBtn!: HTMLElement;
@@ -188,6 +207,13 @@ class WebApp {
     this.buildShell();
     this.wireFileSources();
     void this.renderRecents();
+    // Unsaved drawing changes live only in the CAD frame: ask before the page goes.
+    window.addEventListener("beforeunload", (e) => {
+      if (this.cadDesktop?.dirty) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    });
     this.pwa = initPwa(__APP_VERSION__, {
       onInstallMode: (mode, d) => {
         this.installMode = mode;
@@ -216,6 +242,7 @@ class WebApp {
     brand.createSpan({ cls: "sv-brand-name", text: APP_NAME });
     brand.addEventListener("click", () => this.goHome());
     this.titleEl = header.createDiv({ cls: "sv-title", text: "" });
+    header.createSpan({ cls: "sv-header-mark", attr: { role: "img", "aria-label": COMPANY } });
 
     const actions = header.createDiv({ cls: "sv-actions" });
 
@@ -267,6 +294,9 @@ class WebApp {
     this.host2dContainer = this.host2dUi.createDiv({ cls: "sv-cad2d-container" });
     this.host2dOverlay = this.host2d.createDiv({ cls: "sv-cad2d-overlay" });
     this.host2d.hide();
+    this.hostCad = main.createDiv({ cls: "sv-host sv-host-cad" });
+    this.hostCadOverlay = this.hostCad.createDiv({ cls: "sv-cad2d-overlay" });
+    this.hostCad.hide();
     this.welcome = main.createDiv({ cls: "sv-welcome" });
     this.buildWelcome();
     const mark = main.createDiv({ cls: "sv-company" });
@@ -426,11 +456,131 @@ class WebApp {
     this.currentEntry = null;
     this.host.hide();
     this.host2d.hide();
+    // The CAD frame stays alive behind the welcome page: its drawings (and any
+    // unsaved changes) are still there when the next DWG/DXF opens.
+    this.hostCad.hide();
     this.main.removeClass("is-2d");
+    this.main.removeClass("is-cad");
+    document.body.removeClass("is-cad");
     this.mode = null;
     this.welcome.show();
     this.setTitle(null);
     void this.renderRecents();
+  }
+
+  // --- Full desktop CAD (DWG / DXF editing) -------------------------------
+
+  /** Desktop gets the full CAD interface; phones and tablets keep the touch viewer (setting can force either). */
+  private useCadDesktop(): boolean {
+    if (this.cadInterface === "desktop") return true;
+    if (this.cadInterface === "touch") return false;
+    return !Platform.isMobile;
+  }
+
+  /** The CAD frame, created on the first drawing and kept for the session. */
+  private ensureCadDesktop(): CadDesktop {
+    if (this.cadDesktop) return this.cadDesktop;
+    const cad = mountCadDesktop(this.hostCad, {
+      base: CAD_DESKTOP_BASE,
+      fontsBase: CAD_FONTS_BASE,
+      title: `${APP_NAME} drawing`,
+      onSave: (name, bytes) => this.saveDrawing(name, bytes),
+      onFailed: (error) => {
+        this.cadOverlay("step-viewer-error", "The drawing engine stopped.", `${error} — reload ${APP_NAME} to continue; unsaved changes are lost.`);
+      },
+    });
+    // The overlay sits above the frame.
+    this.hostCad.appendChild(this.hostCadOverlay);
+    this.cadDesktop = cad;
+    return cad;
+  }
+
+  private cadOverlay(cls: string, title: string, sub?: string): HTMLElement {
+    const o = this.hostCadOverlay;
+    o.empty();
+    o.show();
+    const el = o.createDiv({ cls: `step-viewer-overlay ${cls}` });
+    if (cls === "step-viewer-loading") el.createDiv({ cls: "step-viewer-spinner" });
+    el.createEl("div", { text: title, cls: "step-viewer-message" });
+    if (sub) el.createEl("div", { text: sub, cls: "step-viewer-message-sub" });
+    return el;
+  }
+
+  private async openCadDesktop(file: File, token: number, handle?: FileSystemFileHandle): Promise<void> {
+    const first = !this.cadDesktop;
+    const cad = this.ensureCadDesktop();
+    this.cadOverlay(
+      "step-viewer-loading",
+      first ? "Starting the drawing engine…" : `Opening ${file.name}…`,
+      first ? "First time only: about 8 MB, kept for offline use." : formatFileSize(file.size),
+    );
+    try {
+      await cad.ready;
+      if (token !== this.loadToken) return;
+      this.cadOverlay("step-viewer-loading", `Opening ${file.name}…`, formatFileSize(file.size));
+      const bytes = await file.arrayBuffer();
+      if (handle) this.cadHandles.set(file.name, handle);
+      const r = await cad.open(file.name, bytes);
+      if (token !== this.loadToken) return;
+      if (!r.ok) {
+        this.cadOverlay("step-viewer-error", `Could not open "${file.name}".`, r.error);
+        return;
+      }
+      this.hostCadOverlay.hide();
+      this.hostCadOverlay.empty();
+      if (r.warnings?.length) new Notice(r.warnings[0], 8000);
+      cad.focus();
+    } catch (err) {
+      if (token !== this.loadToken) return;
+      console.error("[Datum CAD] open failed", err);
+      this.cadOverlay("step-viewer-error", `Could not open "${file.name}".`, err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /**
+   * A file from the CAD interface (Save, Save As, exports): back into the file it
+   * came from when the browser allows writing it, else a save dialog, else a download.
+   */
+  private async saveDrawing(name: string, bytes: ArrayBuffer): Promise<void> {
+    type Writable = FileSystemFileHandle & {
+      queryPermission?: (d: { mode: string }) => Promise<string>;
+      requestPermission?: (d: { mode: string }) => Promise<string>;
+      createWritable?: () => Promise<{ write(b: BufferSource): Promise<void>; close(): Promise<void> }>;
+    };
+    const write = async (h: Writable): Promise<boolean> => {
+      if (!h.createWritable) return false;
+      const mode = { mode: "readwrite" };
+      if ((await h.queryPermission?.(mode)) !== "granted" && (await h.requestPermission?.(mode).catch(() => "denied")) !== "granted") return false;
+      const w = await h.createWritable();
+      await w.write(bytes);
+      await w.close();
+      return true;
+    };
+    const known = this.cadHandles.get(name) as Writable | undefined;
+    if (known && (await write(known).catch(() => false))) {
+      new Notice(`Saved ${name}`);
+      return;
+    }
+    const picker = (window as unknown as { showSaveFilePicker?: (o: object) => Promise<FileSystemFileHandle> }).showSaveFilePicker;
+    if (picker && !Platform.isMobile) {
+      try {
+        const ext = (name.split(".").pop() ?? "").toLowerCase();
+        const h = (await picker({ suggestedName: name, types: ext ? [{ description: ext.toUpperCase(), accept: { "application/octet-stream": [`.${ext}`] } }] : undefined })) as Writable;
+        if (await write(h)) {
+          this.cadHandles.set(name, h);
+          new Notice(`Saved ${h.name}`);
+          return;
+        }
+      } catch (err) {
+        if ((err as Error)?.name === "AbortError") return;
+        // No user gesture left, or the picker is blocked: download instead.
+      }
+    }
+    const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
+    const a = document.body.createEl("a", { attr: { href: url, download: name, hidden: "" } });
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
 
   // --- 2D (DWG / DXF) ----------------------------------------------------
@@ -627,6 +777,21 @@ class WebApp {
     });
 
     const is2d = SUPPORTED_2D.includes(ext);
+    if (is2d && this.useCadDesktop()) {
+      this.mode = "cad";
+      this.host.hide();
+      this.host2d.hide();
+      this.hostCad.show();
+      this.main.removeClass("is-2d");
+      this.main.addClass("is-cad");
+      document.body.addClass("is-cad");
+      this.unitSel?.hide(); // the CAD interface has its own units
+      await this.openCadDesktop(file, token, handle);
+      return;
+    }
+    this.hostCad.hide();
+    this.main.removeClass("is-cad");
+    document.body.removeClass("is-cad");
     this.mode = is2d ? "2d" : "3d";
     this.host.toggle(!is2d);
     this.host2d.toggle(is2d);
@@ -950,6 +1115,17 @@ class WebApp {
     themeSel.addEventListener("change", () => {
       localStorage.setItem(THEME_KEY, themeSel.value);
       this.applyThemeEverywhere(themeSel.value as Theme);
+    });
+
+    const cadCtl = row("DWG / DXF open in", "Full CAD: draw and edit, with menus and a command line (keyboard + mouse). Touch viewer: view and measure on phones and tablets.");
+    const cadSel = cadCtl.createEl("select");
+    for (const [v, l] of [["auto", "Automatic"], ["desktop", "Full CAD"], ["touch", "Touch viewer"]] as const) {
+      cadSel.createEl("option", { text: l, attr: { value: v } });
+    }
+    cadSel.value = this.cadInterface;
+    cadSel.addEventListener("change", () => {
+      this.cadInterface = cadSel.value as CadInterface;
+      localStorage.setItem(CAD_UI_KEY, this.cadInterface);
     });
 
     const unitCtl = row("Display units", "Measurements, sizes, volumes — 3D and 2D. “Drawing units” keeps a DWG/DXF as saved (3D in mm).");

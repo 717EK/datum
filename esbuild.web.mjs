@@ -161,8 +161,29 @@ function copyWorkerAssets() {
   }
 }
 
+// Shared TAXI modules served with the app, from ./modules (copies made by the
+// module library: `node ../modules/tools/modules.mjs add <name> .`). The full
+// CAD interface (~28 MB wasm) and its fonts: big and rarely changed, so they go
+// on the lazy list like the 2D worker assets. Only what a browser loads ships.
+const SERVED_MODULES = {
+  "cad-desktop": (f) => /\.(html|js|wasm)$/.test(f) || f === "build.json" || f === "THIRD-PARTY-NOTICES.txt",
+  "cad-fonts": (f) => f.startsWith("fonts/") || f === "fonts.json" || f === "LICENSE-OFL.txt",
+};
+function copyModules() {
+  for (const [name, keep] of Object.entries(SERVED_MODULES)) {
+    const src = path.join(here, "modules", name);
+    if (!existsSync(src)) throw new Error(`missing module ${name}: run \`node ../modules/tools/modules.mjs add ${name} .\``);
+    for (const f of walk(src).filter(keep)) {
+      const to = path.join(dist, "modules", name, f);
+      mkdirSync(path.dirname(to), { recursive: true });
+      cpSync(path.join(src, f), to);
+    }
+  }
+}
+
 function finalize() {
   copyWorkerAssets();
+  copyModules();
   // Icons (regenerate if missing).
   const iconDir = path.join(pub, "icons");
   if (!existsSync(path.join(iconDir, "icon-512.png"))) {
@@ -181,7 +202,7 @@ function finalize() {
   const all = walk(dist).filter((f) => f !== "sw.js" && f !== "index.html" && f !== "version.json");
   // The big 2D bundle + worker assets go on the lazy list, each keyed by its
   // own content hash so an unchanged wasm survives an app update in the cache.
-  const isLazy = (f) => f === "cad2d.js" || f.startsWith("workers/");
+  const isLazy = (f) => f === "cad2d.js" || f.startsWith("workers/") || f.startsWith("modules/");
   const files = all.filter((f) => !isLazy(f));
   const lazy = all.filter(isLazy).map((f) => `${f}?v=${hashOf(readFileSync(path.join(dist, f)))}`);
   const hash = hashOf(appJs, css, readFileSync(path.join(pub, "index.html")), ...files.map((f) => readFileSync(path.join(dist, f))), lazy.join("|"));

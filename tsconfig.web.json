@@ -22,7 +22,8 @@
     "src/annotations/**/*.ts",
     "src/settings.ts",
     "src/types.ts",
-    "src/occt-import-js.d.ts"
+    "src/occt-import-js.d.ts",
+    "modules/cad-host/src/**/*.ts"
   ],
   "exclude": [
     "node_modules"

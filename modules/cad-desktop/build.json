@@ -1,0 +1,11 @@
+{
+  "module": "cad-desktop",
+  "built": "2026-10-13T16:50:33.667Z",
+  "files": [
+    "index.html",
+    "taxicad-web-b19caeeac40fd291.js",
+    "taxicad-web-b19caeeac40fd291_bg.wasm",
+    "THIRD-PARTY-NOTICES.txt"
+  ],
+  "wasmMB": 27.6
+}

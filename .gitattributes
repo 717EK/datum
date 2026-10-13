@@ -1,0 +1,2 @@
+# Module copies are byte-exact (index.html carries integrity hashes of its JS): no EOL conversion.
+modules/** -text

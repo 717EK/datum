@@ -1,0 +1,7 @@
+{
+  "name": "cad-fonts",
+  "version": "1.0.0",
+  "kind": "source",
+  "description": "Drawing fonts for the CAD engine in the browser (Liberation Sans/Serif/Mono as Arial/Times/Courier)",
+  "license": "SIL Open Font License 1.1 (LICENSE-OFL.txt)"
+}
