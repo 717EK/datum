@@ -6,8 +6,8 @@
   <title>Datum</title>
   
 <script type="module">
-import init, * as bindings from './taxicad-web-b19caeeac40fd291.js';
-const wasm = await init({ module_or_path: './taxicad-web-b19caeeac40fd291_bg.wasm' });
+import init, * as bindings from './taxicad-web-ff53ed996958d2fe.js';
+const wasm = await init({ module_or_path: './taxicad-web-ff53ed996958d2fe_bg.wasm' });
 
 
 window.wasmBindings = bindings;
@@ -22,7 +22,7 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
     #taxicad_loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
       color: #b8b8b8; font: 14px system-ui, sans-serif; pointer-events: none; }
   </style>
-<link rel="modulepreload" href="./taxicad-web-b19caeeac40fd291.js" crossorigin="anonymous" integrity="sha384-nxs09DoqCi1IruzAi0aZKsBAwFV8vsoT8NSst0LtBt8wVLqOM3t0sXAQuKW0EGen"><link rel="preload" href="./taxicad-web-b19caeeac40fd291_bg.wasm" crossorigin="anonymous" integrity="sha384-pjR6Rw+219AFr8u8mulWGFUuFJAs8X4BH6NSULccAyowGnz75DmYR0ghCIr5TmKk" as="fetch" type="application/wasm"></head>
+<link rel="modulepreload" href="./taxicad-web-ff53ed996958d2fe.js" crossorigin="anonymous" integrity="sha384-Gwrpqh+jYCnarnfrg0U5/7zX4I9lPYOH/Yt8nIaHJ3MuoK2rtMP3suoR7X0p1Fdq"><link rel="preload" href="./taxicad-web-ff53ed996958d2fe_bg.wasm" crossorigin="anonymous" integrity="sha384-Im+DxAnUqHLC/r9KlPMGBS8TCkkiNf6G/Cnx5vLexFlONoqj043J4gJUQ5Hcfi1o" as="fetch" type="application/wasm"></head>
 <body>
   <canvas id="taxicad_canvas"></canvas>
   <div id="taxicad_loading">Loading Datum&hellip;</div>

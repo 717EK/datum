@@ -7,7 +7,38 @@ installable web app that opens STEP/STP/STL/OBJ/FCStd files locally on phone,
 tablet and PC. Git: `origin` = https://github.com/717EK/datum (**public**, main);
 `upstream` = the original repo (full history kept).
 
-## State (2026-09-17, evening)
+## State (2026-10-14) — DWG/DXF editing on the CAD engine module
+Keyword: **`continue datum`**. Live: https://datum-viewer.vercel.app (pushes to `main` deploy;
+Vercel CLI is logged OUT on this rebuilt PC — read deploy status via the GitHub API).
+- **DWG/DXF open in a real CAD editor** built from TAXI's module library
+  (`../modules`, repo 717EK/taxi-modules, private): a TAXI-branded fork of an
+  MIT Rust CAD engine (`modules/taxicad`, see its UPSTREAM.md) compiled to
+  WebAssembly. Copies live in `./modules/` — never edit them here; change the
+  library, bump, `node ../modules/tools/modules.mjs add <name> .`:
+  `cad-desktop` (built wasm app in an iframe, `?host=parent[&ui=touch]`),
+  `cad-host` (TS: mount, open, call, state, saves), `cad-touch` (TS: Meter-style
+  touch controls), `cad-fonts` (Liberation as Arial/Times/Courier).
+  `.gitattributes`: `modules/** -text` (index.html carries integrity hashes).
+- **Desktop**: full CAD interface (menus, tool sets, palettes, command line,
+  295 commands). Drawings open as tabs and survive Home. Save writes back to the
+  opened file (FS Access handle), else a save dialog, else a download; unsaved
+  guard on unload. Verified: DWG 2018 saved in the browser reopens with the same
+  74,318 entities; offline open; the 156 MB Meter DXF the old viewer showed
+  blank opens. TAXI mark moves into the header in CAD mode.
+- **Phones/tablets**: touch CAD — header hidden, drawing full screen, bottom
+  bar (phone) / left rail (≥700×500) with Draw · Modify · Annotate · Layers ·
+  View · File, sheets of tools, a strip for the running command (prompt,
+  keyword chips, Type, Enter, Cancel) or the selection. Pencil draws and picks
+  (hover → crosshair/snaps); one finger pans, two zoom, two-finger tap = undo,
+  one-finger tap = click; palm ignored while the pen is down. Verified headless
+  with emulated touch + pen. **Not yet on a real iPad.**
+- Settings → "DWG / DXF open in": Automatic / Full CAD / Touch CAD / Light
+  viewer (the old mlightcad + LibreDWG viewer, `src/web/cad2d.ts`, kept as a
+  fallback; removing it later drops GPL from the web build).
+- SW: `modules/` served from the long-lived asset cache, including the CAD
+  frame's own navigation; lazy assets refresh only where already used.
+
+## Earlier state (2026-09-17)
 - **Verified in headless Chrome** (puppeteer-core, scratchpad only): welcome
   page (2 columns wide / 1 centred column ≤860px), recents with thumbnails +
   reopen + persistence across reload, STL + a 31 MB STEP (~25 s, 94 meshes),
@@ -101,12 +132,14 @@ active worker and one `step-viewer-<version>` cache.
   config); commit as that or the deploy silently stalls.
 
 ## Next
-1. Deploy to Vercel (see State). Then test installed on Android Chrome,
-   iPhone/iPad Safari (Add to Home Screen; Apple Pencil: long-press menu,
-   palm rejection, double-tap) and Windows Edge/Chrome, incl. "Open with"
-   a .step file and reopening from Recents after a restart.
-2. Real-device memory check: the 4 GB WASM heap patch is desktop-minded;
-   phones will hit the "Large model" warning at 12 MB and may still OOM.
-3. Nice-to-haves: multiple open models/tabs, share-target, WASM as a separate
-   cached file instead of base64-inlined (app.js is 4.7 MB; ~3.5 MB gzipped),
-   re-capture the recents thumbnail when the view changes.
+1. Real iPad + Apple Pencil test (Safari and installed): pen vs palm, hover,
+   the keyboard for Type, dialogs a command opens (finger tap = click), memory
+   on big drawings (the 156 MB DXF needs ~2.3 GB in the engine).
+2. Meter link (his call: "both ways"): drawings stored with a Meter project on
+   the Meter service; Datum lists/opens/saves them; the editor inside Meter via
+   cad-host. Worker changes deploy only on his go (Meter release rule).
+3. Engine memory: box the 5 biggest entity kinds (672 → ~360 B/entity), see
+   ../modules/taxicad/UPSTREAM.md. wasm size 27.7 MB (~8 MB brotli).
+4. Remove the light viewer once touch CAD is proven on devices (drops GPL).
+5. Older: test installed on Android/iPhone/Windows; recents thumbnails for CAD
+   drawings (no snapshot from the frame yet).

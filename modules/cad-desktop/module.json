@@ -1,6 +1,6 @@
 {
   "name": "cad-desktop",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "kind": "built",
   "description": "Full desktop CAD interface (DWG/DXF) as an embeddable WebAssembly app",
   "build": "node tools/build-taxicad.mjs desktop",

@@ -1,0 +1,7 @@
+{
+  "name": "cad-touch",
+  "version": "0.1.1",
+  "kind": "source",
+  "description": "Touch interface for the CAD engine (phones + tablets, Pencil): category bar/rail, tool sheets, command strip",
+  "needs": ["cad-host", "cad-desktop"]
+}

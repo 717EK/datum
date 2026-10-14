@@ -23,7 +23,8 @@
     "src/settings.ts",
     "src/types.ts",
     "src/occt-import-js.d.ts",
-    "modules/cad-host/src/**/*.ts"
+    "modules/cad-host/src/**/*.ts",
+    "modules/cad-touch/src/**/*.ts"
   ],
   "exclude": [
     "node_modules"

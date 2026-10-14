@@ -27,6 +27,7 @@ import { initPwa, InstallMode, PwaHandle } from "./pwa";
 import { RecentsStore, RecentEntry, entryId } from "./recents";
 import { LENGTH_UNITS, LengthUnit, setLengthUnit } from "../viewer/units";
 import { mountCadDesktop, type CadDesktop } from "../../modules/cad-host/src/index";
+import { mountCadTouch, type CadTouch } from "../../modules/cad-touch/src/index";
 import * as THREE from "three";
 
 declare const __APP_VERSION__: string;
@@ -53,12 +54,15 @@ declare global {
 /** The full desktop CAD interface (module cad-desktop) and its drawing fonts (cad-fonts). */
 const CAD_DESKTOP_BASE = "modules/cad-desktop/";
 const CAD_FONTS_BASE = "modules/cad-fonts/";
-/** Which interface DWG/DXF opens in: "auto" = full CAD on desktop, the touch viewer on phones/tablets. */
-type CadInterface = "auto" | "desktop" | "touch";
+/**
+ * Which interface DWG/DXF opens in: "auto" = full CAD on desktop, touch CAD on phones and
+ * tablets; "viewer" = the light view-only viewer (mlightcad), kept as a fallback.
+ */
+type CadInterface = "auto" | "desktop" | "touch" | "viewer";
 const CAD_UI_KEY = "datum:cad-interface";
 function loadCadInterface(): CadInterface {
   const v = localStorage.getItem(CAD_UI_KEY);
-  return v === "desktop" || v === "touch" ? v : "auto";
+  return v === "desktop" || v === "touch" || v === "viewer" ? v : "auto";
 }
 
 const SETTINGS_KEY = "step-viewer:settings";
@@ -179,6 +183,9 @@ class WebApp {
   private hostCad!: HTMLElement;
   private hostCadOverlay!: HTMLElement;
   private cadDesktop: CadDesktop | null = null;
+  /** The interface the CAD frame was started with, and the touch controls over it. */
+  private cadUi: "desktop" | "touch" | null = null;
+  private cadTouch: CadTouch | null = null;
   /** Drawing name → the file it came from, so Save writes back where the browser allows. */
   private cadHandles = new Map<string, FileSystemFileHandle>();
   private cadInterface: CadInterface = loadCadInterface();
@@ -462,6 +469,7 @@ class WebApp {
     this.main.removeClass("is-2d");
     this.main.removeClass("is-cad");
     document.body.removeClass("is-cad");
+    document.body.removeClass("is-cad-touch");
     this.mode = null;
     this.welcome.show();
     this.setTitle(null);
@@ -470,26 +478,40 @@ class WebApp {
 
   // --- Full desktop CAD (DWG / DXF editing) -------------------------------
 
-  /** Desktop gets the full CAD interface; phones and tablets keep the touch viewer (setting can force either). */
-  private useCadDesktop(): boolean {
-    if (this.cadInterface === "desktop") return true;
-    if (this.cadInterface === "touch") return false;
-    return !Platform.isMobile;
+  /** Which CAD interface a DWG/DXF opens in now; null = the light viewer. */
+  private cadUiFor(): "desktop" | "touch" | null {
+    if (this.cadInterface === "viewer") return null;
+    if (this.cadInterface === "desktop" || this.cadInterface === "touch") return this.cadInterface;
+    return Platform.isMobile ? "touch" : "desktop";
   }
 
-  /** The CAD frame, created on the first drawing and kept for the session. */
-  private ensureCadDesktop(): CadDesktop {
+  /** The CAD frame, created on the first drawing and kept for the session (one interface at a time). */
+  private ensureCadDesktop(ui: "desktop" | "touch"): CadDesktop {
+    if (this.cadDesktop && this.cadUi !== ui) {
+      if (this.cadDesktop.dirty) {
+        new Notice("Drawings with unsaved changes are open — they stay in the current interface until saved.");
+        return this.cadDesktop;
+      }
+      this.cadTouch?.destroy();
+      this.cadTouch = null;
+      this.cadDesktop.destroy();
+      this.cadDesktop = null;
+    }
     if (this.cadDesktop) return this.cadDesktop;
     const cad = mountCadDesktop(this.hostCad, {
       base: CAD_DESKTOP_BASE,
       fontsBase: CAD_FONTS_BASE,
+      ui,
+      onState: (s) => this.cadTouch?.setState(s),
       title: `${APP_NAME} drawing`,
       onSave: (name, bytes) => this.saveDrawing(name, bytes),
       onFailed: (error) => {
         this.cadOverlay("step-viewer-error", "The drawing engine stopped.", `${error} — reload ${APP_NAME} to continue; unsaved changes are lost.`);
       },
     });
-    // The overlay sits above the frame.
+    this.cadUi = ui;
+    if (ui === "touch") this.cadTouch = mountCadTouch(this.hostCad, cad, { onBack: () => this.goHome(), hintKey: "datum:cad-touch-hint" });
+    // The overlay sits above the frame (and the touch controls).
     this.hostCad.appendChild(this.hostCadOverlay);
     this.cadDesktop = cad;
     return cad;
@@ -506,9 +528,18 @@ class WebApp {
     return el;
   }
 
-  private async openCadDesktop(file: File, token: number, handle?: FileSystemFileHandle): Promise<void> {
-    const first = !this.cadDesktop;
-    const cad = this.ensureCadDesktop();
+  private async openCadDesktop(file: File, token: number, ui: "desktop" | "touch", handle?: FileSystemFileHandle, confirmed = false): Promise<void> {
+    // Phones and tablets: a big drawing can run the tab out of memory — ask first.
+    if (!confirmed && Platform.isMobile && shouldWarnLargeModel(file.size)) {
+      const el = this.cadOverlay("step-viewer-empty", "Large drawing", `This file is ${formatFileSize(file.size)}. On a phone or tablet, opening large drawings can run out of memory. Open anyway?`);
+      const btn = el.createEl("button", { text: "Open anyway", cls: "mod-cta" });
+      btn.addEventListener("click", () => {
+        if (token === this.loadToken) void this.openCadDesktop(file, token, ui, handle, true);
+      });
+      return;
+    }
+    const first = !this.cadDesktop || this.cadUi !== ui;
+    const cad = this.ensureCadDesktop(ui);
     this.cadOverlay(
       "step-viewer-loading",
       first ? "Starting the drawing engine…" : `Opening ${file.name}…`,
@@ -777,7 +808,8 @@ class WebApp {
     });
 
     const is2d = SUPPORTED_2D.includes(ext);
-    if (is2d && this.useCadDesktop()) {
+    const cadUi = is2d ? this.cadUiFor() : null;
+    if (cadUi) {
       this.mode = "cad";
       this.host.hide();
       this.host2d.hide();
@@ -785,13 +817,15 @@ class WebApp {
       this.main.removeClass("is-2d");
       this.main.addClass("is-cad");
       document.body.addClass("is-cad");
+      document.body.toggleClass("is-cad-touch", cadUi === "touch");
       this.unitSel?.hide(); // the CAD interface has its own units
-      await this.openCadDesktop(file, token, handle);
+      await this.openCadDesktop(file, token, cadUi, handle);
       return;
     }
     this.hostCad.hide();
     this.main.removeClass("is-cad");
     document.body.removeClass("is-cad");
+    document.body.removeClass("is-cad-touch");
     this.mode = is2d ? "2d" : "3d";
     this.host.toggle(!is2d);
     this.host2d.toggle(is2d);
@@ -1117,9 +1151,9 @@ class WebApp {
       this.applyThemeEverywhere(themeSel.value as Theme);
     });
 
-    const cadCtl = row("DWG / DXF open in", "Full CAD: draw and edit, with menus and a command line (keyboard + mouse). Touch viewer: view and measure on phones and tablets.");
+    const cadCtl = row("DWG / DXF open in", "Automatic: full CAD on a computer, touch CAD on phones and tablets (Pencil draws, fingers move). Light viewer: view and measure only, least memory.");
     const cadSel = cadCtl.createEl("select");
-    for (const [v, l] of [["auto", "Automatic"], ["desktop", "Full CAD"], ["touch", "Touch viewer"]] as const) {
+    for (const [v, l] of [["auto", "Automatic"], ["desktop", "Full CAD"], ["touch", "Touch CAD"], ["viewer", "Light viewer"]] as const) {
       cadSel.createEl("option", { text: l, attr: { value: v } });
     }
     cadSel.value = this.cadInterface;

@@ -20,7 +20,39 @@ export interface CadOpened {
   error?: string;
 }
 
+/** What the CAD app reports in touch mode (`taxicad:state`): enough to draw prompts and buttons. */
+export interface CadState {
+  /** The prompt text ("LINE Specify next point or [Undo]:"), "" when idle. */
+  prompt: string;
+  /** The command running, e.g. "line"; null when idle. */
+  running: string | null;
+  /** Keywords the current prompt accepts ("Undo", "Close", …). */
+  keywords: string[];
+  /** The last line of the command history. */
+  last: string | null;
+  /** Objects selected. */
+  selection: number;
+  undo: boolean;
+  redo: boolean;
+  docs: { index: number; title: string; dirty: boolean }[];
+  active: number;
+}
+
+export interface CadCallResult {
+  ok: boolean;
+  result?: any;
+  error?: string;
+}
+
 export interface CadDesktopOptions {
+  /**
+   * "desktop" (default): the full interface with menus, palettes and command line.
+   * "touch": only the drawing — the page draws its own controls (see cad-touch) and drives the
+   * app with `call`; fingers pan and zoom, a pen draws.
+   */
+  ui?: "desktop" | "touch";
+  /** Touch mode: the prompt / selection / undo state whenever it changes. */
+  onState?: (state: CadState) => void;
   /** URL of the cad-desktop folder, ending in "/". */
   base: string;
   /** URL of the cad-fonts folder, ending in "/". Its fonts go to the engine before the first drawing. */
@@ -43,6 +75,13 @@ export interface CadDesktop {
   open(name: string, bytes: ArrayBuffer): Promise<CadOpened>;
   /** Whether any open drawing has unsaved changes. */
   readonly dirty: boolean;
+  /**
+   * Call a control-channel method of the CAD app (`cmdline.input`, `cmdline.key`,
+   * `engine.execute`, `ui.inspect`, …); resolves with `{ ok, result | error }`.
+   */
+  call(method: string, params?: object): Promise<CadCallResult>;
+  /** Touch mode: the last state the app reported, if any. */
+  readonly state: CadState | null;
   focus(): void;
   destroy(): void;
 }
@@ -94,7 +133,7 @@ export function mountCadDesktop(container: HTMLElement, opts: CadDesktopOptions)
   frame.title = opts.title ?? "CAD drawing";
   frame.setAttribute("allow", "clipboard-read; clipboard-write; fullscreen");
   frame.style.cssText = "border:0;display:block;width:100%;height:100%;background:#22282f";
-  frame.src = new URL(opts.base + "index.html?host=parent", location.href).href;
+  frame.src = new URL(opts.base + "index.html?host=parent" + (opts.ui === "touch" ? "&ui=touch" : ""), location.href).href;
   container.appendChild(frame);
 
   let dirty = false;
@@ -107,6 +146,9 @@ export function mountCadDesktop(container: HTMLElement, opts: CadDesktopOptions)
   });
   ready.catch(() => {});
   const pending: ((r: CadOpened) => void)[] = [];
+  const calls = new Map<number, (r: CadCallResult) => void>();
+  let nextCall = 1;
+  let state: CadState | null = null;
 
   const onMessage = async (e: MessageEvent) => {
     if (e.source !== frame.contentWindow || e.origin !== location.origin) return;
@@ -145,6 +187,18 @@ export function mountCadDesktop(container: HTMLElement, opts: CadDesktopOptions)
         }
         break;
       }
+      case "taxicad:result": {
+        const done = calls.get(Number(d.id));
+        if (done) {
+          calls.delete(Number(d.id));
+          done({ ok: d.ok === true, result: d.result, error: typeof d.error === "string" ? d.error : undefined });
+        }
+        break;
+      }
+      case "taxicad:state":
+        state = d.state as CadState;
+        opts.onState?.(state);
+        break;
       case "taxicad:dirty":
         dirty = d.dirty === true;
         opts.onDirty?.(dirty);
@@ -165,6 +219,17 @@ export function mountCadDesktop(container: HTMLElement, opts: CadDesktopOptions)
     get dirty() {
       return dirty;
     },
+    get state() {
+      return state;
+    },
+    async call(method, params = {}) {
+      await ready;
+      const id = nextCall++;
+      return new Promise<CadCallResult>((resolve) => {
+        calls.set(id, resolve);
+        frame.contentWindow?.postMessage({ type: "taxicad:call", id, method, params }, location.origin);
+      });
+    },
     async open(name, bytes) {
       await ready;
       return new Promise<CadOpened>((resolve) => {
@@ -179,6 +244,8 @@ export function mountCadDesktop(container: HTMLElement, opts: CadDesktopOptions)
     destroy() {
       window.removeEventListener("message", onMessage);
       for (const p of pending.splice(0)) p({ name: "", ok: false, ms: 0, error: "closed" });
+      for (const c of calls.values()) c({ ok: false, error: "closed" });
+      calls.clear();
       frame.remove();
     },
   };

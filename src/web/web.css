@@ -500,3 +500,8 @@ body.is-cad .sv-header-mark { display: block; }
 .sv-cad2d-overlay { position: absolute; inset: 0; z-index: 20; pointer-events: none; }
 .sv-cad2d-overlay .step-viewer-overlay { pointer-events: auto; }
 
+
+/* Touch CAD (phones, tablets): the drawing and its own controls take the whole screen; the
+   touch controls' top row has the way back. */
+body.is-cad-touch .sv-header { display: none; }
+body.is-cad-touch .sv-host-cad { touch-action: none; }
